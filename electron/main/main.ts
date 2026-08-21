@@ -1,22 +1,18 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
+import { initializeDatabase, runMigrations, closeDatabase } from "../database";
 
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
-declare const MAIN_WINDOW_VITE_NAME: string;
+let mainWindow: BrowserWindow | null = null;
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+function createWindow() {
+  mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-
-    minWidth: 1200,
+    minWidth: 1000,
     minHeight: 700,
 
-    autoHideMenuBar: true,
-
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-
+      preload: path.join(__dirname, "../preload/preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -28,13 +24,24 @@ function createWindow(): void {
     mainWindow.loadFile(
       path.join(
         __dirname,
-        `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`
-      )
+        `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`,
+      ),
     );
   }
 }
 
 app.whenReady().then(() => {
+  const databasePath = path.join(
+    app.getPath("userData"),
+    "apni-dukan.db",
+  );
+
+  console.log("Database path:", databasePath);
+
+  initializeDatabase(databasePath);
+
+  runMigrations(databasePath);
+
   createWindow();
 
   app.on("activate", () => {
@@ -42,6 +49,10 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on("before-quit", () => {
+  closeDatabase();
 });
 
 app.on("window-all-closed", () => {
