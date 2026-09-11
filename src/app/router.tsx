@@ -1,0 +1,25 @@
+import { Routes, Route } from "react-router-dom";
+import { AppLayout } from "./layouts/AppLayout";
+import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { ComingSoonPage } from "../features/_placeholders/ComingSoonPage";
+
+export function AppRouter() {
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<DashboardPage />} />
+        <Route path="billing" element={<ComingSoonPage title="Billing" />} />
+        <Route path="customers" element={<ComingSoonPage title="Customers" />} />
+        <Route path="companies" element={<ComingSoonPage title="Companies" />} />
+        <Route path="products" element={<ComingSoonPage title="Products" />} />
+        <Route path="inventory" element={<ComingSoonPage title="Inventory" />} />
+        <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />
+        <Route path="payments" element={<ComingSoonPage title="Payments" />} />
+        <Route path="expenses" element={<ComingSoonPage title="Expenses" />} />
+        <Route path="reports" element={<ComingSoonPage title="Reports" />} />
+        <Route path="settings" element={<ComingSoonPage title="Settings" />} />
+        <Route path="*" element={<ComingSoonPage title="Not Found" />} />
+      </Route>
+    </Routes>
+  );
+}

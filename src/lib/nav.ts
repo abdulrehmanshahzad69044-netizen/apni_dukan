@@ -1,0 +1,35 @@
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  Package,
+  Boxes,
+  Receipt,
+  BookOpen,
+  Wallet,
+  TrendingDown,
+  BarChart3,
+  Settings,
+} from "lucide-react";
+
+export type NavItem = {
+  label: string;
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+  /** Show in the bottom nav on narrow widths. Keep it to 4 max. */
+  mobile?: boolean;
+};
+
+export const NAV_ITEMS: NavItem[] = [
+  { label: "Dashboard", to: "/", icon: LayoutDashboard, mobile: true },
+  { label: "Billing", to: "/billing", icon: Receipt, mobile: true },
+  { label: "Customers", to: "/customers", icon: Users, mobile: true },
+  { label: "Inventory", to: "/inventory", icon: Boxes, mobile: true },
+  { label: "Products", to: "/products", icon: Package },
+  { label: "Companies", to: "/companies", icon: Building2 },
+  { label: "Khaata", to: "/khaata", icon: BookOpen },
+  { label: "Payments", to: "/payments", icon: Wallet },
+  { label: "Expenses", to: "/expenses", icon: TrendingDown },
+  { label: "Reports", to: "/reports", icon: BarChart3 },
+  { label: "Settings", to: "/settings", icon: Settings },
+];
