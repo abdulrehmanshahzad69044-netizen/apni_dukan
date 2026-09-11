@@ -3,11 +3,11 @@ const { FuseV1Options, FuseVersion } = require("@electron/fuses");
 
 module.exports = {
   packagerConfig: {
-  asar: true,
-  asarUnpack: [
-    "**/node_modules/better-sqlite3/**",
-  ],
-},
+    asar: true,
+    asarUnpack: [
+      "**/node_modules/better-sqlite3/**",
+    ],
+  },
 
   rebuildConfig: {},
 
@@ -38,12 +38,12 @@ module.exports = {
           },
         ],
 
-        renderer: [
-          {
-            name: "main_window",
-            config: "vite.renderer.config.ts",
-          },
-        ],
+         renderer: [
+      {
+        name: "main_window",
+        config: "vite.renderer.config.ts",
+      },
+    ],
       },
     },
 

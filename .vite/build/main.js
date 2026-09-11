@@ -1,9 +1,526 @@
 "use strict";
-const electron = require("electron");
+const require$$3$1 = require("electron");
 const path = require("node:path");
-const Client = require("better-sqlite3");
+const require$$0$1 = require("path");
+const require$$1$1 = require("child_process");
+const require$$0 = require("tty");
+const require$$1 = require("util");
+const require$$3 = require("fs");
+const require$$4 = require("net");
 const crypto$1 = require("node:crypto");
 const fs = require("node:fs");
+const Client = require("better-sqlite3");
+function getDefaultExportFromCjs(x) {
+  return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
+}
+var src = { exports: {} };
+var browser = { exports: {} };
+var debug = { exports: {} };
+var ms;
+var hasRequiredMs;
+function requireMs() {
+  if (hasRequiredMs) return ms;
+  hasRequiredMs = 1;
+  var s = 1e3;
+  var m = s * 60;
+  var h = m * 60;
+  var d = h * 24;
+  var y = d * 365.25;
+  ms = function(val, options) {
+    options = options || {};
+    var type = typeof val;
+    if (type === "string" && val.length > 0) {
+      return parse(val);
+    } else if (type === "number" && isNaN(val) === false) {
+      return options.long ? fmtLong(val) : fmtShort(val);
+    }
+    throw new Error(
+      "val is not a non-empty string or a valid number. val=" + JSON.stringify(val)
+    );
+  };
+  function parse(str) {
+    str = String(str);
+    if (str.length > 100) {
+      return;
+    }
+    var match = /^((?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|years?|yrs?|y)?$/i.exec(
+      str
+    );
+    if (!match) {
+      return;
+    }
+    var n = parseFloat(match[1]);
+    var type = (match[2] || "ms").toLowerCase();
+    switch (type) {
+      case "years":
+      case "year":
+      case "yrs":
+      case "yr":
+      case "y":
+        return n * y;
+      case "days":
+      case "day":
+      case "d":
+        return n * d;
+      case "hours":
+      case "hour":
+      case "hrs":
+      case "hr":
+      case "h":
+        return n * h;
+      case "minutes":
+      case "minute":
+      case "mins":
+      case "min":
+      case "m":
+        return n * m;
+      case "seconds":
+      case "second":
+      case "secs":
+      case "sec":
+      case "s":
+        return n * s;
+      case "milliseconds":
+      case "millisecond":
+      case "msecs":
+      case "msec":
+      case "ms":
+        return n;
+      default:
+        return void 0;
+    }
+  }
+  function fmtShort(ms2) {
+    if (ms2 >= d) {
+      return Math.round(ms2 / d) + "d";
+    }
+    if (ms2 >= h) {
+      return Math.round(ms2 / h) + "h";
+    }
+    if (ms2 >= m) {
+      return Math.round(ms2 / m) + "m";
+    }
+    if (ms2 >= s) {
+      return Math.round(ms2 / s) + "s";
+    }
+    return ms2 + "ms";
+  }
+  function fmtLong(ms2) {
+    return plural(ms2, d, "day") || plural(ms2, h, "hour") || plural(ms2, m, "minute") || plural(ms2, s, "second") || ms2 + " ms";
+  }
+  function plural(ms2, n, name) {
+    if (ms2 < n) {
+      return;
+    }
+    if (ms2 < n * 1.5) {
+      return Math.floor(ms2 / n) + " " + name;
+    }
+    return Math.ceil(ms2 / n) + " " + name + "s";
+  }
+  return ms;
+}
+var hasRequiredDebug;
+function requireDebug() {
+  if (hasRequiredDebug) return debug.exports;
+  hasRequiredDebug = 1;
+  (function(module, exports) {
+    exports = module.exports = createDebug.debug = createDebug["default"] = createDebug;
+    exports.coerce = coerce;
+    exports.disable = disable;
+    exports.enable = enable;
+    exports.enabled = enabled;
+    exports.humanize = requireMs();
+    exports.names = [];
+    exports.skips = [];
+    exports.formatters = {};
+    var prevTime;
+    function selectColor(namespace) {
+      var hash = 0, i;
+      for (i in namespace) {
+        hash = (hash << 5) - hash + namespace.charCodeAt(i);
+        hash |= 0;
+      }
+      return exports.colors[Math.abs(hash) % exports.colors.length];
+    }
+    function createDebug(namespace) {
+      function debug2() {
+        if (!debug2.enabled) return;
+        var self = debug2;
+        var curr = +/* @__PURE__ */ new Date();
+        var ms2 = curr - (prevTime || curr);
+        self.diff = ms2;
+        self.prev = prevTime;
+        self.curr = curr;
+        prevTime = curr;
+        var args = new Array(arguments.length);
+        for (var i = 0; i < args.length; i++) {
+          args[i] = arguments[i];
+        }
+        args[0] = exports.coerce(args[0]);
+        if ("string" !== typeof args[0]) {
+          args.unshift("%O");
+        }
+        var index = 0;
+        args[0] = args[0].replace(/%([a-zA-Z%])/g, function(match, format) {
+          if (match === "%%") return match;
+          index++;
+          var formatter = exports.formatters[format];
+          if ("function" === typeof formatter) {
+            var val = args[index];
+            match = formatter.call(self, val);
+            args.splice(index, 1);
+            index--;
+          }
+          return match;
+        });
+        exports.formatArgs.call(self, args);
+        var logFn = debug2.log || exports.log || console.log.bind(console);
+        logFn.apply(self, args);
+      }
+      debug2.namespace = namespace;
+      debug2.enabled = exports.enabled(namespace);
+      debug2.useColors = exports.useColors();
+      debug2.color = selectColor(namespace);
+      if ("function" === typeof exports.init) {
+        exports.init(debug2);
+      }
+      return debug2;
+    }
+    function enable(namespaces) {
+      exports.save(namespaces);
+      exports.names = [];
+      exports.skips = [];
+      var split = (typeof namespaces === "string" ? namespaces : "").split(/[\s,]+/);
+      var len = split.length;
+      for (var i = 0; i < len; i++) {
+        if (!split[i]) continue;
+        namespaces = split[i].replace(/\*/g, ".*?");
+        if (namespaces[0] === "-") {
+          exports.skips.push(new RegExp("^" + namespaces.substr(1) + "$"));
+        } else {
+          exports.names.push(new RegExp("^" + namespaces + "$"));
+        }
+      }
+    }
+    function disable() {
+      exports.enable("");
+    }
+    function enabled(name) {
+      var i, len;
+      for (i = 0, len = exports.skips.length; i < len; i++) {
+        if (exports.skips[i].test(name)) {
+          return false;
+        }
+      }
+      for (i = 0, len = exports.names.length; i < len; i++) {
+        if (exports.names[i].test(name)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    function coerce(val) {
+      if (val instanceof Error) return val.stack || val.message;
+      return val;
+    }
+  })(debug, debug.exports);
+  return debug.exports;
+}
+var hasRequiredBrowser;
+function requireBrowser() {
+  if (hasRequiredBrowser) return browser.exports;
+  hasRequiredBrowser = 1;
+  (function(module, exports) {
+    exports = module.exports = requireDebug();
+    exports.log = log;
+    exports.formatArgs = formatArgs;
+    exports.save = save;
+    exports.load = load;
+    exports.useColors = useColors;
+    exports.storage = "undefined" != typeof chrome && "undefined" != typeof chrome.storage ? chrome.storage.local : localstorage();
+    exports.colors = [
+      "lightseagreen",
+      "forestgreen",
+      "goldenrod",
+      "dodgerblue",
+      "darkorchid",
+      "crimson"
+    ];
+    function useColors() {
+      if (typeof window !== "undefined" && window.process && window.process.type === "renderer") {
+        return true;
+      }
+      return typeof document !== "undefined" && document.documentElement && document.documentElement.style && document.documentElement.style.WebkitAppearance || // is firebug? http://stackoverflow.com/a/398120/376773
+      typeof window !== "undefined" && window.console && (window.console.firebug || window.console.exception && window.console.table) || // is firefox >= v31?
+      // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
+      typeof navigator !== "undefined" && navigator.userAgent && navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31 || // double check webkit in userAgent just in case we are in a worker
+      typeof navigator !== "undefined" && navigator.userAgent && navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/);
+    }
+    exports.formatters.j = function(v) {
+      try {
+        return JSON.stringify(v);
+      } catch (err) {
+        return "[UnexpectedJSONParseError]: " + err.message;
+      }
+    };
+    function formatArgs(args) {
+      var useColors2 = this.useColors;
+      args[0] = (useColors2 ? "%c" : "") + this.namespace + (useColors2 ? " %c" : " ") + args[0] + (useColors2 ? "%c " : " ") + "+" + exports.humanize(this.diff);
+      if (!useColors2) return;
+      var c = "color: " + this.color;
+      args.splice(1, 0, c, "color: inherit");
+      var index = 0;
+      var lastC = 0;
+      args[0].replace(/%[a-zA-Z%]/g, function(match) {
+        if ("%%" === match) return;
+        index++;
+        if ("%c" === match) {
+          lastC = index;
+        }
+      });
+      args.splice(lastC, 0, c);
+    }
+    function log() {
+      return "object" === typeof console && console.log && Function.prototype.apply.call(console.log, console, arguments);
+    }
+    function save(namespaces) {
+      try {
+        if (null == namespaces) {
+          exports.storage.removeItem("debug");
+        } else {
+          exports.storage.debug = namespaces;
+        }
+      } catch (e) {
+      }
+    }
+    function load() {
+      var r;
+      try {
+        r = exports.storage.debug;
+      } catch (e) {
+      }
+      if (!r && typeof process !== "undefined" && "env" in process) {
+        r = process.env.DEBUG;
+      }
+      return r;
+    }
+    exports.enable(load());
+    function localstorage() {
+      try {
+        return window.localStorage;
+      } catch (e) {
+      }
+    }
+  })(browser, browser.exports);
+  return browser.exports;
+}
+var node = { exports: {} };
+var hasRequiredNode;
+function requireNode() {
+  if (hasRequiredNode) return node.exports;
+  hasRequiredNode = 1;
+  (function(module, exports) {
+    var tty = require$$0;
+    var util = require$$1;
+    exports = module.exports = requireDebug();
+    exports.init = init;
+    exports.log = log;
+    exports.formatArgs = formatArgs;
+    exports.save = save;
+    exports.load = load;
+    exports.useColors = useColors;
+    exports.colors = [6, 2, 3, 4, 5, 1];
+    exports.inspectOpts = Object.keys(process.env).filter(function(key) {
+      return /^debug_/i.test(key);
+    }).reduce(function(obj, key) {
+      var prop = key.substring(6).toLowerCase().replace(/_([a-z])/g, function(_, k) {
+        return k.toUpperCase();
+      });
+      var val = process.env[key];
+      if (/^(yes|on|true|enabled)$/i.test(val)) val = true;
+      else if (/^(no|off|false|disabled)$/i.test(val)) val = false;
+      else if (val === "null") val = null;
+      else val = Number(val);
+      obj[prop] = val;
+      return obj;
+    }, {});
+    var fd = parseInt(process.env.DEBUG_FD, 10) || 2;
+    if (1 !== fd && 2 !== fd) {
+      util.deprecate(function() {
+      }, "except for stderr(2) and stdout(1), any other usage of DEBUG_FD is deprecated. Override debug.log if you want to use a different log function (https://git.io/debug_fd)")();
+    }
+    var stream = 1 === fd ? process.stdout : 2 === fd ? process.stderr : createWritableStdioStream(fd);
+    function useColors() {
+      return "colors" in exports.inspectOpts ? Boolean(exports.inspectOpts.colors) : tty.isatty(fd);
+    }
+    exports.formatters.o = function(v) {
+      this.inspectOpts.colors = this.useColors;
+      return util.inspect(v, this.inspectOpts).split("\n").map(function(str) {
+        return str.trim();
+      }).join(" ");
+    };
+    exports.formatters.O = function(v) {
+      this.inspectOpts.colors = this.useColors;
+      return util.inspect(v, this.inspectOpts);
+    };
+    function formatArgs(args) {
+      var name = this.namespace;
+      var useColors2 = this.useColors;
+      if (useColors2) {
+        var c = this.color;
+        var prefix = "  \x1B[3" + c + ";1m" + name + " \x1B[0m";
+        args[0] = prefix + args[0].split("\n").join("\n" + prefix);
+        args.push("\x1B[3" + c + "m+" + exports.humanize(this.diff) + "\x1B[0m");
+      } else {
+        args[0] = (/* @__PURE__ */ new Date()).toUTCString() + " " + name + " " + args[0];
+      }
+    }
+    function log() {
+      return stream.write(util.format.apply(util, arguments) + "\n");
+    }
+    function save(namespaces) {
+      if (null == namespaces) {
+        delete process.env.DEBUG;
+      } else {
+        process.env.DEBUG = namespaces;
+      }
+    }
+    function load() {
+      return process.env.DEBUG;
+    }
+    function createWritableStdioStream(fd2) {
+      var stream2;
+      var tty_wrap = process.binding("tty_wrap");
+      switch (tty_wrap.guessHandleType(fd2)) {
+        case "TTY":
+          stream2 = new tty.WriteStream(fd2);
+          stream2._type = "tty";
+          if (stream2._handle && stream2._handle.unref) {
+            stream2._handle.unref();
+          }
+          break;
+        case "FILE":
+          var fs2 = require$$3;
+          stream2 = new fs2.SyncWriteStream(fd2, { autoClose: false });
+          stream2._type = "fs";
+          break;
+        case "PIPE":
+        case "TCP":
+          var net = require$$4;
+          stream2 = new net.Socket({
+            fd: fd2,
+            readable: false,
+            writable: true
+          });
+          stream2.readable = false;
+          stream2.read = null;
+          stream2._type = "pipe";
+          if (stream2._handle && stream2._handle.unref) {
+            stream2._handle.unref();
+          }
+          break;
+        default:
+          throw new Error("Implement me. Unknown stream file type!");
+      }
+      stream2.fd = fd2;
+      stream2._isStdio = true;
+      return stream2;
+    }
+    function init(debug2) {
+      debug2.inspectOpts = {};
+      var keys = Object.keys(exports.inspectOpts);
+      for (var i = 0; i < keys.length; i++) {
+        debug2.inspectOpts[keys[i]] = exports.inspectOpts[keys[i]];
+      }
+    }
+    exports.enable(load());
+  })(node, node.exports);
+  return node.exports;
+}
+var hasRequiredSrc;
+function requireSrc() {
+  if (hasRequiredSrc) return src.exports;
+  hasRequiredSrc = 1;
+  if (typeof process !== "undefined" && process.type === "renderer") {
+    src.exports = requireBrowser();
+  } else {
+    src.exports = requireNode();
+  }
+  return src.exports;
+}
+var electronSquirrelStartup;
+var hasRequiredElectronSquirrelStartup;
+function requireElectronSquirrelStartup() {
+  if (hasRequiredElectronSquirrelStartup) return electronSquirrelStartup;
+  hasRequiredElectronSquirrelStartup = 1;
+  var path2 = require$$0$1;
+  var spawn = require$$1$1.spawn;
+  var debug2 = requireSrc()("electron-squirrel-startup");
+  var app = require$$3$1.app;
+  var run = function(args, done) {
+    var updateExe = path2.resolve(path2.dirname(process.execPath), "..", "Update.exe");
+    debug2("Spawning `%s` with args `%s`", updateExe, args);
+    spawn(updateExe, args, {
+      detached: true
+    }).on("close", done);
+  };
+  var check = function() {
+    if (process.platform === "win32") {
+      var cmd = process.argv[1];
+      debug2("processing squirrel command `%s`", cmd);
+      var target = path2.basename(process.execPath);
+      if (cmd === "--squirrel-install" || cmd === "--squirrel-updated") {
+        run(["--createShortcut=" + target], app.quit);
+        return true;
+      }
+      if (cmd === "--squirrel-uninstall") {
+        run(["--removeShortcut=" + target], app.quit);
+        return true;
+      }
+      if (cmd === "--squirrel-obsolete") {
+        app.quit();
+        return true;
+      }
+    }
+    return false;
+  };
+  electronSquirrelStartup = check();
+  return electronSquirrelStartup;
+}
+var electronSquirrelStartupExports = requireElectronSquirrelStartup();
+const started = /* @__PURE__ */ getDefaultExportFromCjs(electronSquirrelStartupExports);
+function readMigrationFiles(config) {
+  const migrationFolderTo = config.migrationsFolder;
+  const migrationQueries = [];
+  const journalPath = `${migrationFolderTo}/meta/_journal.json`;
+  if (!fs.existsSync(journalPath)) {
+    throw new Error(`Can't find meta/_journal.json file`);
+  }
+  const journalAsString = fs.readFileSync(`${migrationFolderTo}/meta/_journal.json`).toString();
+  const journal = JSON.parse(journalAsString);
+  for (const journalEntry of journal.entries) {
+    const migrationPath = `${migrationFolderTo}/${journalEntry.tag}.sql`;
+    try {
+      const query = fs.readFileSync(`${migrationFolderTo}/${journalEntry.tag}.sql`).toString();
+      const result = query.split("--> statement-breakpoint").map((it) => {
+        return it;
+      });
+      migrationQueries.push({
+        sql: result,
+        bps: journalEntry.breakpoints,
+        folderMillis: journalEntry.when,
+        hash: crypto$1.createHash("sha256").update(query).digest("hex")
+      });
+    } catch {
+      throw new Error(`No file ${migrationPath} found in ${migrationFolderTo} folder`);
+    }
+  }
+  return migrationQueries;
+}
+function migrate(db, config) {
+  const migrations = readMigrationFiles(config);
+  db.dialect.migrate(migrations, db.session, config);
+}
 const entityKind = /* @__PURE__ */ Symbol.for("drizzle:entityKind");
 function is(value, type) {
   if (!value || typeof value !== "object") {
@@ -702,16 +1219,16 @@ function mapResultRow(columns, row, joinsNotNullableMap) {
       } else {
         decoder = field.sql.decoder;
       }
-      let node = result2;
+      let node2 = result2;
       for (const [pathChunkIndex, pathChunk] of path2.entries()) {
         if (pathChunkIndex < path2.length - 1) {
-          if (!(pathChunk in node)) {
-            node[pathChunk] = {};
+          if (!(pathChunk in node2)) {
+            node2[pathChunk] = {};
           }
-          node = node[pathChunk];
+          node2 = node2[pathChunk];
         } else {
           const rawValue = row[columnIndex];
-          const value = node[pathChunk] = rawValue === null ? null : decoder.mapFromDriverValue(rawValue);
+          const value = node2[pathChunk] = rawValue === null ? null : decoder.mapFromDriverValue(rawValue);
           if (joinsNotNullableMap && is(field, Column) && path2.length === 2) {
             const objectName = path2[0];
             if (!(objectName in nullifyMap)) {
@@ -836,7 +1353,7 @@ function isConfig(data) {
   if (Object.keys(data).length === 0) return true;
   return false;
 }
-const textDecoder = typeof TextDecoder === "undefined" ? null : new TextDecoder();
+typeof TextDecoder === "undefined" ? null : new TextDecoder();
 const InlineForeignKeys$1 = /* @__PURE__ */ Symbol.for("drizzle:PgInlineForeignKeys");
 const EnableRLS = /* @__PURE__ */ Symbol.for("drizzle:EnableRLS");
 class PgTable extends Table {
@@ -1535,139 +2052,6 @@ class SQLiteColumn extends Column {
   }
   static [entityKind] = "SQLiteColumn";
 }
-class SQLiteBigIntBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteBigIntBuilder";
-  constructor(name) {
-    super(name, "bigint", "SQLiteBigInt");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteBigInt(table, this.config);
-  }
-}
-class SQLiteBigInt extends SQLiteColumn {
-  static [entityKind] = "SQLiteBigInt";
-  getSQLType() {
-    return "blob";
-  }
-  mapFromDriverValue(value) {
-    if (typeof Buffer !== "undefined" && Buffer.from) {
-      const buf = Buffer.isBuffer(value) ? value : value instanceof ArrayBuffer ? Buffer.from(value) : value.buffer ? Buffer.from(value.buffer, value.byteOffset, value.byteLength) : Buffer.from(value);
-      return BigInt(buf.toString("utf8"));
-    }
-    return BigInt(textDecoder.decode(value));
-  }
-  mapToDriverValue(value) {
-    return Buffer.from(value.toString());
-  }
-}
-class SQLiteBlobJsonBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteBlobJsonBuilder";
-  constructor(name) {
-    super(name, "json", "SQLiteBlobJson");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteBlobJson(
-      table,
-      this.config
-    );
-  }
-}
-class SQLiteBlobJson extends SQLiteColumn {
-  static [entityKind] = "SQLiteBlobJson";
-  getSQLType() {
-    return "blob";
-  }
-  mapFromDriverValue(value) {
-    if (typeof Buffer !== "undefined" && Buffer.from) {
-      const buf = Buffer.isBuffer(value) ? value : value instanceof ArrayBuffer ? Buffer.from(value) : value.buffer ? Buffer.from(value.buffer, value.byteOffset, value.byteLength) : Buffer.from(value);
-      return JSON.parse(buf.toString("utf8"));
-    }
-    return JSON.parse(textDecoder.decode(value));
-  }
-  mapToDriverValue(value) {
-    return Buffer.from(JSON.stringify(value));
-  }
-}
-class SQLiteBlobBufferBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteBlobBufferBuilder";
-  constructor(name) {
-    super(name, "buffer", "SQLiteBlobBuffer");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteBlobBuffer(table, this.config);
-  }
-}
-class SQLiteBlobBuffer extends SQLiteColumn {
-  static [entityKind] = "SQLiteBlobBuffer";
-  mapFromDriverValue(value) {
-    if (Buffer.isBuffer(value)) {
-      return value;
-    }
-    return Buffer.from(value);
-  }
-  getSQLType() {
-    return "blob";
-  }
-}
-function blob(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (config?.mode === "json") {
-    return new SQLiteBlobJsonBuilder(name);
-  }
-  if (config?.mode === "bigint") {
-    return new SQLiteBigIntBuilder(name);
-  }
-  return new SQLiteBlobBufferBuilder(name);
-}
-class SQLiteCustomColumnBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteCustomColumnBuilder";
-  constructor(name, fieldConfig, customTypeParams) {
-    super(name, "custom", "SQLiteCustomColumn");
-    this.config.fieldConfig = fieldConfig;
-    this.config.customTypeParams = customTypeParams;
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteCustomColumn(
-      table,
-      this.config
-    );
-  }
-}
-class SQLiteCustomColumn extends SQLiteColumn {
-  static [entityKind] = "SQLiteCustomColumn";
-  sqlName;
-  mapTo;
-  mapFrom;
-  constructor(table, config) {
-    super(table, config);
-    this.sqlName = config.customTypeParams.dataType(config.fieldConfig);
-    this.mapTo = config.customTypeParams.toDriver;
-    this.mapFrom = config.customTypeParams.fromDriver;
-  }
-  getSQLType() {
-    return this.sqlName;
-  }
-  mapFromDriverValue(value) {
-    return typeof this.mapFrom === "function" ? this.mapFrom(value) : value;
-  }
-  mapToDriverValue(value) {
-    return typeof this.mapTo === "function" ? this.mapTo(value) : value;
-  }
-}
-function customType(customTypeParams) {
-  return (a, b) => {
-    const { name, config } = getColumnNameAndConfig(a, b);
-    return new SQLiteCustomColumnBuilder(
-      name,
-      config,
-      customTypeParams
-    );
-  };
-}
 class SQLiteBaseIntegerBuilder extends SQLiteColumnBuilder {
   static [entityKind] = "SQLiteBaseIntegerBuilder";
   constructor(name, dataType, columnType) {
@@ -1775,166 +2159,6 @@ function integer(a, b) {
   }
   return new SQLiteIntegerBuilder(name);
 }
-class SQLiteNumericBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteNumericBuilder";
-  constructor(name) {
-    super(name, "string", "SQLiteNumeric");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteNumeric(
-      table,
-      this.config
-    );
-  }
-}
-class SQLiteNumeric extends SQLiteColumn {
-  static [entityKind] = "SQLiteNumeric";
-  mapFromDriverValue(value) {
-    if (typeof value === "string") return value;
-    return String(value);
-  }
-  getSQLType() {
-    return "numeric";
-  }
-}
-class SQLiteNumericNumberBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteNumericNumberBuilder";
-  constructor(name) {
-    super(name, "number", "SQLiteNumericNumber");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteNumericNumber(
-      table,
-      this.config
-    );
-  }
-}
-class SQLiteNumericNumber extends SQLiteColumn {
-  static [entityKind] = "SQLiteNumericNumber";
-  mapFromDriverValue(value) {
-    if (typeof value === "number") return value;
-    return Number(value);
-  }
-  mapToDriverValue = String;
-  getSQLType() {
-    return "numeric";
-  }
-}
-class SQLiteNumericBigIntBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteNumericBigIntBuilder";
-  constructor(name) {
-    super(name, "bigint", "SQLiteNumericBigInt");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteNumericBigInt(
-      table,
-      this.config
-    );
-  }
-}
-class SQLiteNumericBigInt extends SQLiteColumn {
-  static [entityKind] = "SQLiteNumericBigInt";
-  mapFromDriverValue = BigInt;
-  mapToDriverValue = String;
-  getSQLType() {
-    return "numeric";
-  }
-}
-function numeric(a, b) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  const mode = config?.mode;
-  return mode === "number" ? new SQLiteNumericNumberBuilder(name) : mode === "bigint" ? new SQLiteNumericBigIntBuilder(name) : new SQLiteNumericBuilder(name);
-}
-class SQLiteRealBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteRealBuilder";
-  constructor(name) {
-    super(name, "number", "SQLiteReal");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteReal(table, this.config);
-  }
-}
-class SQLiteReal extends SQLiteColumn {
-  static [entityKind] = "SQLiteReal";
-  getSQLType() {
-    return "real";
-  }
-}
-function real(name) {
-  return new SQLiteRealBuilder(name ?? "");
-}
-class SQLiteTextBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteTextBuilder";
-  constructor(name, config) {
-    super(name, "string", "SQLiteText");
-    this.config.enumValues = config.enum;
-    this.config.length = config.length;
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteText(
-      table,
-      this.config
-    );
-  }
-}
-class SQLiteText extends SQLiteColumn {
-  static [entityKind] = "SQLiteText";
-  enumValues = this.config.enumValues;
-  length = this.config.length;
-  constructor(table, config) {
-    super(table, config);
-  }
-  getSQLType() {
-    return `text${this.config.length ? `(${this.config.length})` : ""}`;
-  }
-}
-class SQLiteTextJsonBuilder extends SQLiteColumnBuilder {
-  static [entityKind] = "SQLiteTextJsonBuilder";
-  constructor(name) {
-    super(name, "json", "SQLiteTextJson");
-  }
-  /** @internal */
-  build(table) {
-    return new SQLiteTextJson(
-      table,
-      this.config
-    );
-  }
-}
-class SQLiteTextJson extends SQLiteColumn {
-  static [entityKind] = "SQLiteTextJson";
-  getSQLType() {
-    return "text";
-  }
-  mapFromDriverValue(value) {
-    return JSON.parse(value);
-  }
-  mapToDriverValue(value) {
-    return JSON.stringify(value);
-  }
-}
-function text(a, b = {}) {
-  const { name, config } = getColumnNameAndConfig(a, b);
-  if (config.mode === "json") {
-    return new SQLiteTextJsonBuilder(name);
-  }
-  return new SQLiteTextBuilder(name, config);
-}
-function getSQLiteColumnBuilders() {
-  return {
-    blob,
-    customType,
-    integer,
-    numeric,
-    real,
-    text
-  };
-}
 const InlineForeignKeys = /* @__PURE__ */ Symbol.for("drizzle:SQLiteInlineForeignKeys");
 class SQLiteTable extends Table {
   static [entityKind] = "SQLiteTable";
@@ -1949,26 +2173,6 @@ class SQLiteTable extends Table {
   /** @internal */
   [Table.Symbol.ExtraConfigBuilder] = void 0;
 }
-function sqliteTableBase(name, columns, extraConfig, schema2, baseName = name) {
-  const rawTable = new SQLiteTable(name, schema2, baseName);
-  const parsedColumns = typeof columns === "function" ? columns(getSQLiteColumnBuilders()) : columns;
-  const builtColumns = Object.fromEntries(
-    Object.entries(parsedColumns).map(([name2, colBuilderBase]) => {
-      const colBuilder = colBuilderBase;
-      colBuilder.setName(name2);
-      const column = colBuilder.build(rawTable);
-      rawTable[InlineForeignKeys].push(...colBuilder.buildForeignKeys(column, rawTable));
-      return [name2, column];
-    })
-  );
-  const table = Object.assign(rawTable, builtColumns);
-  table[Table.Symbol.Columns] = builtColumns;
-  table[Table.Symbol.ExtraConfigColumns] = builtColumns;
-  return table;
-}
-const sqliteTable = (name, columns, extraConfig) => {
-  return sqliteTableBase(name, columns);
-};
 function extractUsedTable(table) {
   if (is(table, SQLiteTable)) {
     return [`${table[Table.Symbol.BaseName]}`];
@@ -4770,119 +4974,141 @@ function drizzle(...params) {
   }
   drizzle2.mock = mock;
 })(drizzle || (drizzle = {}));
-function readMigrationFiles(config) {
-  const migrationFolderTo = config.migrationsFolder;
-  const migrationQueries = [];
-  const journalPath = `${migrationFolderTo}/meta/_journal.json`;
-  if (!fs.existsSync(journalPath)) {
-    throw new Error(`Can't find meta/_journal.json file`);
-  }
-  const journalAsString = fs.readFileSync(`${migrationFolderTo}/meta/_journal.json`).toString();
-  const journal = JSON.parse(journalAsString);
-  for (const journalEntry of journal.entries) {
-    const migrationPath = `${migrationFolderTo}/${journalEntry.tag}.sql`;
-    try {
-      const query = fs.readFileSync(`${migrationFolderTo}/${journalEntry.tag}.sql`).toString();
-      const result = query.split("--> statement-breakpoint").map((it) => {
-        return it;
-      });
-      migrationQueries.push({
-        sql: result,
-        bps: journalEntry.breakpoints,
-        folderMillis: journalEntry.when,
-        hash: crypto$1.createHash("sha256").update(query).digest("hex")
-      });
-    } catch {
-      throw new Error(`No file ${migrationPath} found in ${migrationFolderTo} folder`);
-    }
-  }
-  return migrationQueries;
-}
-function migrate(db, config) {
-  const migrations = readMigrationFiles(config);
-  db.dialect.migrate(migrations, db.session, config);
-}
-const customers = sqliteTable("customers", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  customerCode: text("customer_code").notNull().unique(),
-  name: text("name").notNull(),
-  contactNumber: text("contact_number").notNull(),
-  address: text("address").notNull(),
-  isActive: integer("is_active", {
-    mode: "boolean"
-  }).notNull().default(true),
-  createdAt: integer("created_at", {
-    mode: "timestamp"
-  }).notNull().$defaultFn(() => /* @__PURE__ */ new Date()),
-  updatedAt: integer("updated_at", {
-    mode: "timestamp"
-  }).notNull().$defaultFn(() => /* @__PURE__ */ new Date())
-});
+const money = (name) => integer(name);
+const quantity = (name) => integer(name);
+const timestamps = {
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`)
+};
+const softDelete = {
+  deletedAt: integer("deleted_at", { mode: "timestamp" })
+};
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  customers
+  money,
+  quantity,
+  softDelete,
+  timestamps
 }, Symbol.toStringTag, { value: "Module" }));
-let sqlite = null;
-function initializeDatabase(databasePath) {
-  if (sqlite) {
-    return drizzle(sqlite, { schema });
+const DB_FILENAME = "apni-dukan.db";
+function getUserDataDir() {
+  const dir = require$$3$1.app.getPath("userData");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
-  sqlite = new Client(databasePath);
+  return dir;
+}
+function getDatabasePath() {
+  if (process.env.NODE_ENV === "development" || !require$$3$1.app.isPackaged) {
+    return path.join(process.cwd(), "dev-apni-dukan.db");
+  }
+  return path.join(getUserDataDir(), DB_FILENAME);
+}
+function getMigrationsPath() {
+  if (process.env.NODE_ENV === "development" || !require$$3$1.app.isPackaged) {
+    return path.join(process.cwd(), "drizzle");
+  }
+  return path.join(process.resourcesPath, "drizzle");
+}
+function createClient() {
+  const dbPath = getDatabasePath();
+  const sqlite = new Client(dbPath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
-  const db = drizzle(sqlite, { schema });
-  return db;
+  sqlite.pragma("busy_timeout = 5000");
+  sqlite.pragma("synchronous = NORMAL");
+  return drizzle(sqlite, { schema });
 }
-function runMigrations(databasePath) {
-  const database = initializeDatabase(databasePath);
-  migrate(database, {
-    migrationsFolder: "./drizzle"
-  });
-  console.log("Database migrations completed successfully.");
+let _db = null;
+function getDb() {
+  if (!_db) {
+    _db = createClient();
+  }
+  return _db;
 }
-function closeDatabase() {
-  if (sqlite) {
-    sqlite.close();
-    sqlite = null;
+function closeDb() {
+  if (_db) {
+    _db.$client.close();
+    _db = null;
   }
 }
-let mainWindow = null;
-function createWindow() {
-  mainWindow = new electron.BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1e3,
-    minHeight: 700,
-    webPreferences: {
-      preload: path.join(__dirname, "../preload/preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false
+function runMigrations() {
+  const migrationsFolder = getMigrationsPath();
+  if (!fs.existsSync(migrationsFolder)) {
+    console.warn(
+      `[migrate] Migrations folder not found at ${migrationsFolder}. Skipping.`
+    );
+    return;
+  }
+  console.log(`[migrate] Running migrations from ${migrationsFolder}`);
+  try {
+    migrate(getDb(), { migrationsFolder });
+    console.log("[migrate] Migrations applied successfully.");
+  } catch (err) {
+    console.error("[migrate] Migration failed:", err);
+    throw err;
+  }
+}
+function registerAppIpc() {
+  require$$3$1.ipcMain.handle(
+    "app:ping",
+    async (_event, payload) => {
+      return {
+        reply: `pong: ${payload.message}`,
+        timestamp: Date.now()
+      };
     }
-  });
-  {
-    mainWindow.loadURL("http://localhost:5173");
-  }
-}
-electron.app.whenReady().then(() => {
-  const databasePath = path.join(
-    electron.app.getPath("userData"),
-    "apni-dukan.db"
   );
-  console.log("Database path:", databasePath);
-  initializeDatabase(databasePath);
-  runMigrations(databasePath);
-  createWindow();
-  electron.app.on("activate", () => {
-    if (electron.BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+  require$$3$1.ipcMain.handle(
+    "app:version",
+    async () => {
+      return {
+        app: require$$3$1.app.getVersion(),
+        electron: process.versions.electron,
+        node: process.versions.node,
+        chrome: process.versions.chrome
+      };
+    }
+  );
+}
+function registerAllIpc() {
+  registerAppIpc();
+}
+if (started) {
+  require$$3$1.app.quit();
+}
+function createWindow() {
+  const win = new require$$3$1.BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 1024,
+    minHeight: 720,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+      // required for better-sqlite3 in main + preload APIs
     }
   });
-});
-electron.app.on("before-quit", () => {
-  closeDatabase();
-});
-electron.app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    electron.app.quit();
+  win.once("ready-to-show", () => win.show());
+  {
+    win.loadURL("http://localhost:5173");
   }
+}
+require$$3$1.app.whenReady().then(() => {
+  runMigrations();
+  registerAllIpc();
+  createWindow();
+  require$$3$1.app.on("activate", () => {
+    if (require$$3$1.BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+require$$3$1.app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") require$$3$1.app.quit();
+});
+require$$3$1.app.on("before-quit", () => {
+  closeDb();
 });
