@@ -22,6 +22,13 @@
       "when": 1789196237075,
       "tag": "0002_nifty_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789237151700,
+      "tag": "0003_spooky_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

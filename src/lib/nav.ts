@@ -11,6 +11,8 @@ import {
   BarChart3,
   Settings,
   Tag,
+  Ruler,
+  ArrowRightLeft,
 } from "lucide-react";
 
 export type NavItem = {
@@ -27,6 +29,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Inventory", to: "/inventory", icon: Boxes, mobile: true },
   { label: "Products", to: "/products", icon: Package },
   { label: "Categories", to: "/categories", icon: Tag },
+  { label: "Units", to: "/units", icon: Ruler },
+  { label: "Unit Conversions", to: "/unit-conversions", icon: ArrowRightLeft },
   { label: "Companies", to: "/companies", icon: Building2 },
   { label: "Khaata", to: "/khaata", icon: BookOpen },
   { label: "Payments", to: "/payments", icon: Wallet },

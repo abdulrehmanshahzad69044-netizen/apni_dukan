@@ -33,6 +33,21 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("category:delete", id),
     restore: (id) => ipcRenderer.invoke("category:restore", id),
   },
+  unit: {
+    list: (query) => ipcRenderer.invoke("unit:list", query ?? {}),
+    count: (query) => ipcRenderer.invoke("unit:count", query ?? {}),
+    get: (id) => ipcRenderer.invoke("unit:get", id),
+    create: (input) => ipcRenderer.invoke("unit:create", input),
+    update: (input) => ipcRenderer.invoke("unit:update", input),
+    delete: (id) => ipcRenderer.invoke("unit:delete", id),
+    restore: (id) => ipcRenderer.invoke("unit:restore", id),
+  },
+  unitConversion: {
+    list: (filter) => ipcRenderer.invoke("unitConversion:list", filter),
+    create: (input) => ipcRenderer.invoke("unitConversion:create", input),
+    update: (input) => ipcRenderer.invoke("unitConversion:update", input),
+    delete: (id) => ipcRenderer.invoke("unitConversion:delete", id),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

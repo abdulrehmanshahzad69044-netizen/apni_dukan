@@ -16,6 +16,15 @@ import type {
   CreateCategoryInput,
   UpdateCategoryInput,
 } from "./category";
+import type {
+  CreateUnitConversionInput,
+  CreateUnitInput,
+  Unit,
+  UnitConversion,
+  UnitListQuery,
+  UpdateUnitConversionInput,
+  UpdateUnitInput,
+} from "./unit";
 
 export type IpcChannels = {
   "app:ping": {
@@ -69,6 +78,23 @@ export type AppApi = {
     update: (input: UpdateCategoryInput) => Promise<Category>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
+  };
+  unit: {
+    list: (query?: Partial<UnitListQuery>) => Promise<Unit[]>;
+    count: (
+      query?: Pick<UnitListQuery, "search" | "includeDeleted">
+    ) => Promise<number>;
+    get: (id: number) => Promise<Unit | null>;
+    create: (input: CreateUnitInput) => Promise<Unit>;
+    update: (input: UpdateUnitInput) => Promise<Unit>;
+    delete: (id: number) => Promise<{ ok: true }>;
+    restore: (id: number) => Promise<{ ok: true }>;
+  };
+  unitConversion: {
+    list: (filter?: { unitId?: number }) => Promise<UnitConversion[]>;
+    create: (input: CreateUnitConversionInput) => Promise<UnitConversion>;
+    update: (input: UpdateUnitConversionInput) => Promise<UnitConversion>;
+    delete: (id: number) => Promise<{ ok: true }>;
   };
 };
 

@@ -2014,6 +2014,46 @@ class ForeignKey {
 function uniqueKeyName(table, columns) {
   return `${table[TableName]}_${columns.join("_")}_unique`;
 }
+function unique(name) {
+  return new UniqueOnConstraintBuilder(name);
+}
+class UniqueConstraintBuilder {
+  constructor(columns, name) {
+    this.name = name;
+    this.columns = columns;
+  }
+  static [entityKind] = "SQLiteUniqueConstraintBuilder";
+  /** @internal */
+  columns;
+  /** @internal */
+  build(table) {
+    return new UniqueConstraint(table, this.columns, this.name);
+  }
+}
+class UniqueOnConstraintBuilder {
+  static [entityKind] = "SQLiteUniqueOnConstraintBuilder";
+  /** @internal */
+  name;
+  constructor(name) {
+    this.name = name;
+  }
+  on(...columns) {
+    return new UniqueConstraintBuilder(columns, this.name);
+  }
+}
+class UniqueConstraint {
+  constructor(table, columns, name) {
+    this.table = table;
+    this.columns = columns;
+    this.name = name ?? uniqueKeyName(this.table, this.columns.map((column) => column.name));
+  }
+  static [entityKind] = "SQLiteUniqueConstraint";
+  columns;
+  name;
+  getName() {
+    return this.name;
+  }
+}
 class SQLiteColumnBuilder extends ColumnBuilder {
   static [entityKind] = "SQLiteColumnBuilder";
   foreignKeyConfigs = [];
@@ -2501,9 +2541,9 @@ const sqliteTable = (name, columns, extraConfig) => {
   return sqliteTableBase(name, columns, extraConfig);
 };
 class IndexBuilderOn {
-  constructor(name, unique) {
+  constructor(name, unique2) {
     this.name = name;
-    this.unique = unique;
+    this.unique = unique2;
   }
   static [entityKind] = "SQLiteIndexBuilderOn";
   on(...columns) {
@@ -2514,11 +2554,11 @@ class IndexBuilder {
   static [entityKind] = "SQLiteIndexBuilder";
   /** @internal */
   config;
-  constructor(name, columns, unique) {
+  constructor(name, columns, unique2) {
     this.config = {
       name,
       columns,
-      unique,
+      unique: unique2,
       where: void 0
     };
   }
@@ -5404,6 +5444,56 @@ const categories = sqliteTable("categories", {
 const categoriesRelations = relations(categories, ({ many }) => ({
   // Populated when products exist.
 }));
+const units = sqliteTable(
+  "units",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    shortName: text("short_name").notNull(),
+    ...timestamps,
+    ...softDelete
+  },
+  (t) => ({
+    nameIdx: index("units_name_idx").on(t.name)
+  })
+);
+const unitConversions = sqliteTable(
+  "unit_conversions",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    fromUnitId: integer$1("from_unit_id").notNull().references(() => units.id, { onDelete: "cascade" }),
+    toUnitId: integer$1("to_unit_id").notNull().references(() => units.id, { onDelete: "cascade" }),
+    factor: integer$1("factor").notNull(),
+    ...timestamps
+  },
+  (t) => ({
+    pairUnique: unique("unit_conversions_pair_unique").on(
+      t.fromUnitId,
+      t.toUnitId
+    ),
+    fromIdx: index("unit_conversions_from_idx").on(t.fromUnitId),
+    toIdx: index("unit_conversions_to_idx").on(t.toUnitId)
+  })
+);
+const unitsRelations = relations(units, ({ many }) => ({
+  conversionsFrom: many(unitConversions, { relationName: "fromUnit" }),
+  conversionsTo: many(unitConversions, { relationName: "toUnit" })
+}));
+const unitConversionsRelations = relations(
+  unitConversions,
+  ({ one }) => ({
+    fromUnit: one(units, {
+      fields: [unitConversions.fromUnitId],
+      references: [units.id],
+      relationName: "fromUnit"
+    }),
+    toUnit: one(units, {
+      fields: [unitConversions.toUnitId],
+      references: [units.id],
+      relationName: "toUnit"
+    })
+  })
+);
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   categories,
@@ -5415,7 +5505,11 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   money,
   quantity,
   softDelete,
-  timestamps
+  timestamps,
+  unitConversions,
+  unitConversionsRelations,
+  units,
+  unitsRelations
 }, Symbol.toStringTag, { value: "Module" }));
 const DB_FILENAME = "apni-dukan.db";
 function getUserDataDir() {
@@ -10258,11 +10352,257 @@ function registerCategoryIpc() {
     return { ok: true };
   });
 }
+function toUnitDto(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    shortName: row.shortName,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
+    deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1e3) : null
+  };
+}
+async function assertUnitNameAvailable(name, shortName, excludeId) {
+  const db = getDb();
+  const conditions = [isNull(units.deletedAt)];
+  if (excludeId !== void 0) conditions.push(ne(units.id, excludeId));
+  const [byName] = await db.select({ id: units.id }).from(units).where(and(...conditions, eq(units.name, name))).limit(1);
+  if (byName) throw new Error(`Unit "${name}" already exists`);
+  const [byShort] = await db.select({ id: units.id }).from(units).where(and(...conditions, eq(units.shortName, shortName))).limit(1);
+  if (byShort) throw new Error(`Short name "${shortName}" already exists`);
+}
+const unitService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) conditions.push(isNull(units.deletedAt));
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(or(like(units.name, term), like(units.shortName, term)));
+    }
+    const rows = await db.select().from(units).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(units.name)).limit(query.limit).offset(query.offset);
+    return rows.map(toUnitDto);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select().from(units).where(eq(units.id, id)).limit(1);
+    return rows[0] ? toUnitDto(rows[0]) : null;
+  },
+  async create(input) {
+    await assertUnitNameAvailable(input.name, input.shortName);
+    const db = getDb();
+    const [row] = await db.insert(units).values({ name: input.name, shortName: input.shortName }).returning();
+    return toUnitDto(row);
+  },
+  async update(input) {
+    const db = getDb();
+    const current = await this.getById(input.id);
+    if (!current) throw new Error(`Unit ${input.id} not found`);
+    const nextName = input.name ?? current.name;
+    const nextShort = input.shortName ?? current.shortName;
+    await assertUnitNameAvailable(nextName, nextShort, input.id);
+    const updateValues = { updatedAt: /* @__PURE__ */ new Date() };
+    if (input.name !== void 0) updateValues.name = input.name;
+    if (input.shortName !== void 0) updateValues.shortName = input.shortName;
+    const [row] = await db.update(units).set(updateValues).where(eq(units.id, input.id)).returning();
+    return toUnitDto(row);
+  },
+  async softDelete(id) {
+    const db = getDb();
+    await db.update(units).set({ deletedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq(units.id, id));
+  },
+  async restore(id) {
+    const db = getDb();
+    await db.update(units).set({ deletedAt: null, updatedAt: /* @__PURE__ */ new Date() }).where(eq(units.id, id));
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) conditions.push(isNull(units.deletedAt));
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(or(like(units.name, term), like(units.shortName, term)));
+    }
+    const [row] = await db.select({ count: sql`count(*)` }).from(units).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  }
+};
+const conversionSelect = {
+  id: unitConversions.id,
+  fromUnitId: unitConversions.fromUnitId,
+  toUnitId: unitConversions.toUnitId,
+  factor: unitConversions.factor,
+  createdAt: unitConversions.createdAt,
+  updatedAt: unitConversions.updatedAt,
+  fromUnitName: sql`from_unit.name`,
+  fromUnitShortName: sql`from_unit.short_name`,
+  toUnitName: sql`to_unit.name`,
+  toUnitShortName: sql`to_unit.short_name`
+};
+function toConversionDto(row) {
+  return {
+    id: row.id,
+    fromUnitId: row.fromUnitId,
+    toUnitId: row.toUnitId,
+    factor: row.factor,
+    fromUnitName: row.fromUnitName,
+    fromUnitShortName: row.fromUnitShortName,
+    toUnitName: row.toUnitName,
+    toUnitShortName: row.toUnitShortName,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3)
+  };
+}
+const unitConversionService = {
+  /**
+   * List all conversions, optionally filtered by a specific unit
+   * (returns both directions involving that unit).
+   */
+  async list(filter) {
+    const db = getDb();
+    const rows = await db.select(conversionSelect).from(unitConversions).innerJoin(
+      sql`units AS from_unit`,
+      sql`from_unit.id = ${unitConversions.fromUnitId}`
+    ).innerJoin(
+      sql`units AS to_unit`,
+      sql`to_unit.id = ${unitConversions.toUnitId}`
+    ).where(
+      filter?.unitId !== void 0 ? or(
+        eq(unitConversions.fromUnitId, filter.unitId),
+        eq(unitConversions.toUnitId, filter.unitId)
+      ) : void 0
+    ).orderBy(asc(unitConversions.fromUnitId), asc(unitConversions.toUnitId));
+    return rows.map(toConversionDto);
+  },
+  async create(input) {
+    const db = getDb();
+    const existing = await db.select({ id: unitConversions.id }).from(unitConversions).where(
+      or(
+        and(
+          eq(unitConversions.fromUnitId, input.fromUnitId),
+          eq(unitConversions.toUnitId, input.toUnitId)
+        ),
+        and(
+          eq(unitConversions.fromUnitId, input.toUnitId),
+          eq(unitConversions.toUnitId, input.fromUnitId)
+        )
+      )
+    ).limit(1);
+    if (existing.length > 0) {
+      throw new Error("A conversion between these units already exists");
+    }
+    const milliFactor = Math.round(input.factor * 1e3);
+    const [inserted] = await db.insert(unitConversions).values({
+      fromUnitId: input.fromUnitId,
+      toUnitId: input.toUnitId,
+      factor: milliFactor
+    }).returning({ id: unitConversions.id });
+    const [row] = await db.select(conversionSelect).from(unitConversions).innerJoin(
+      sql`units AS from_unit`,
+      sql`from_unit.id = ${unitConversions.fromUnitId}`
+    ).innerJoin(
+      sql`units AS to_unit`,
+      sql`to_unit.id = ${unitConversions.toUnitId}`
+    ).where(eq(unitConversions.id, inserted.id)).limit(1);
+    return toConversionDto(row);
+  },
+  async update(input) {
+    const db = getDb();
+    const milliFactor = Math.round(input.factor * 1e3);
+    await db.update(unitConversions).set({ factor: milliFactor, updatedAt: /* @__PURE__ */ new Date() }).where(eq(unitConversions.id, input.id));
+    const [row] = await db.select(conversionSelect).from(unitConversions).innerJoin(
+      sql`units AS from_unit`,
+      sql`from_unit.id = ${unitConversions.fromUnitId}`
+    ).innerJoin(
+      sql`units AS to_unit`,
+      sql`to_unit.id = ${unitConversions.toUnitId}`
+    ).where(eq(unitConversions.id, input.id)).limit(1);
+    if (!row) throw new Error(`Conversion ${input.id} not found`);
+    return toConversionDto(row);
+  },
+  async delete(id) {
+    const db = getDb();
+    await db.delete(unitConversions).where(eq(unitConversions.id, id));
+  }
+};
+const createUnitSchema = object({
+  name: string().trim().min(1, "Name is required").max(40),
+  shortName: string().trim().min(1, "Short name is required").max(10)
+});
+const updateUnitSchema = createUnitSchema.partial().extend({
+  id: number().int().positive()
+});
+const unitListQuerySchema = object({
+  search: string().trim().optional(),
+  includeDeleted: boolean().optional().default(false),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+const createUnitConversionSchema = object({
+  fromUnitId: number().int().positive(),
+  toUnitId: number().int().positive(),
+  factor: number().positive("Factor must be positive").max(1e9, "Factor too large")
+}).refine((v) => v.fromUnitId !== v.toUnitId, {
+  message: "From and To units must be different",
+  path: ["toUnitId"]
+});
+const updateUnitConversionSchema = object({
+  id: number().int().positive(),
+  factor: number().positive("Factor must be positive").max(1e9, "Factor too large")
+});
+function registerUnitIpc() {
+  require$$3$1.ipcMain.handle("unit:list", async (_e, rawQuery) => {
+    const query = unitListQuerySchema.parse(rawQuery ?? {});
+    return unitService.list(query);
+  });
+  require$$3$1.ipcMain.handle("unit:count", async (_e, rawQuery) => {
+    const query = unitListQuerySchema.pick({ search: true, includeDeleted: true }).parse(rawQuery ?? {});
+    return unitService.count(query);
+  });
+  require$$3$1.ipcMain.handle("unit:get", async (_e, id) => {
+    return unitService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("unit:create", async (_e, rawInput) => {
+    const input = createUnitSchema.parse(rawInput);
+    return unitService.create(input);
+  });
+  require$$3$1.ipcMain.handle("unit:update", async (_e, rawInput) => {
+    const input = updateUnitSchema.parse(rawInput);
+    return unitService.update(input);
+  });
+  require$$3$1.ipcMain.handle("unit:delete", async (_e, id) => {
+    await unitService.softDelete(id);
+    return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("unit:restore", async (_e, id) => {
+    await unitService.restore(id);
+    return { ok: true };
+  });
+  require$$3$1.ipcMain.handle(
+    "unitConversion:list",
+    async (_e, filter) => {
+      return unitConversionService.list(filter);
+    }
+  );
+  require$$3$1.ipcMain.handle("unitConversion:create", async (_e, rawInput) => {
+    const input = createUnitConversionSchema.parse(rawInput);
+    return unitConversionService.create(input);
+  });
+  require$$3$1.ipcMain.handle("unitConversion:update", async (_e, rawInput) => {
+    const input = updateUnitConversionSchema.parse(rawInput);
+    return unitConversionService.update(input);
+  });
+  require$$3$1.ipcMain.handle("unitConversion:delete", async (_e, id) => {
+    await unitConversionService.delete(id);
+    return { ok: true };
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
   registerCompanyIpc();
   registerCategoryIpc();
+  registerUnitIpc();
 }
 if (started) {
   require$$3$1.app.quit();
