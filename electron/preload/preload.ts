@@ -24,6 +24,15 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("company:delete", id),
     restore: (id) => ipcRenderer.invoke("company:restore", id),
   },
+  category: {
+    list: (query) => ipcRenderer.invoke("category:list", query ?? {}),
+    count: (query) => ipcRenderer.invoke("category:count", query ?? {}),
+    get: (id) => ipcRenderer.invoke("category:get", id),
+    create: (input) => ipcRenderer.invoke("category:create", input),
+    update: (input) => ipcRenderer.invoke("category:update", input),
+    delete: (id) => ipcRenderer.invoke("category:delete", id),
+    restore: (id) => ipcRenderer.invoke("category:restore", id),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

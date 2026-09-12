@@ -10,6 +10,12 @@ import type {
   CreateCompanyInput,
   UpdateCompanyInput,
 } from "./company";
+import type {
+  Category,
+  CategoryListQuery,
+  CreateCategoryInput,
+  UpdateCategoryInput,
+} from "./category";
 
 export type IpcChannels = {
   "app:ping": {
@@ -50,6 +56,17 @@ export type AppApi = {
     get: (id: number) => Promise<Company | null>;
     create: (input: CreateCompanyInput) => Promise<Company>;
     update: (input: UpdateCompanyInput) => Promise<Company>;
+    delete: (id: number) => Promise<{ ok: true }>;
+    restore: (id: number) => Promise<{ ok: true }>;
+  };
+  category: {
+    list: (query?: Partial<CategoryListQuery>) => Promise<Category[]>;
+    count: (
+      query?: Pick<CategoryListQuery, "search" | "includeDeleted">
+    ) => Promise<number>;
+    get: (id: number) => Promise<Category | null>;
+    create: (input: CreateCategoryInput) => Promise<Category>;
+    update: (input: UpdateCategoryInput) => Promise<Category>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };

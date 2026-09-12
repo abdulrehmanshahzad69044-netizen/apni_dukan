@@ -4,7 +4,7 @@ export * from "./_shared";
 // Module schemas — added progressively as we build each module.
 export * from "./customers";
 export * from "./companies";
-// export * from "./categories";
+export * from "./categories";
 // export * from "./units";
 // export * from "./products";
 // export * from "./variants";

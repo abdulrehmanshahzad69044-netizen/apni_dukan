@@ -3,6 +3,7 @@ import { AppLayout } from "./layouts/AppLayout";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { CustomersPage } from "@/features/customers/CustomersPage";
 import { CompaniesPage } from "@/features/companies/CompaniesPage";
+import { CategoriesPage } from "@/features/categories/CategoriesPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -13,6 +14,7 @@ export function AppRouter() {
         <Route path="billing" element={<ComingSoonPage title="Billing" />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="companies" element={<CompaniesPage />} />
+        <Route path="categories" element={<CategoriesPage />} />
         <Route path="products" element={<ComingSoonPage title="Products" />} />
         <Route path="inventory" element={<ComingSoonPage title="Inventory" />} />
         <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />

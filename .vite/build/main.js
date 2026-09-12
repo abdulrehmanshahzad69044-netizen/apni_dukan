@@ -5395,8 +5395,19 @@ const companies = sqliteTable(
 const companiesRelations = relations(companies, ({ many }) => ({
   // Populated when products / purchases / company-payments exist.
 }));
+const categories = sqliteTable("categories", {
+  id: integer$1("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  ...timestamps,
+  ...softDelete
+});
+const categoriesRelations = relations(categories, ({ many }) => ({
+  // Populated when products exist.
+}));
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
+  categories,
+  categoriesRelations,
   companies,
   companiesRelations,
   customers,
@@ -5487,7 +5498,7 @@ function registerAppIpc() {
     }
   );
 }
-function toDto$1(row) {
+function toDto$2(row) {
   return {
     id: row.id,
     name: row.name,
@@ -5516,12 +5527,12 @@ const customerService = {
       );
     }
     const rows = await db.select().from(customers).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(customers.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$1);
+    return rows.map(toDto$2);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
-    return rows[0] ? toDto$1(rows[0]) : null;
+    return rows[0] ? toDto$2(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -5530,7 +5541,7 @@ const customerService = {
       contactNumber: input.contactNumber ?? null,
       address: input.address ?? null
     }).returning();
-    return toDto$1(row);
+    return toDto$2(row);
   },
   async update(input) {
     const db = getDb();
@@ -5545,7 +5556,7 @@ const customerService = {
       updateValues.address = patch.address ?? null;
     const [row] = await db.update(customers).set(updateValues).where(eq(customers.id, id)).returning();
     if (!row) throw new Error(`Customer ${id} not found`);
-    return toDto$1(row);
+    return toDto$2(row);
   },
   /**
    * Soft delete. Never physically removes.
@@ -10022,7 +10033,7 @@ function registerCustomerIpc() {
     return { ok: true };
   });
 }
-function toDto(row) {
+function toDto$1(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10046,12 +10057,12 @@ const companyService = {
       );
     }
     const rows = await db.select().from(companies).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(companies.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto);
+    return rows.map(toDto$1);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
-    return rows[0] ? toDto(rows[0]) : null;
+    return rows[0] ? toDto$1(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -10059,7 +10070,7 @@ const companyService = {
       name: input.name,
       contactNumber: input.contactNumber ?? null
     }).returning();
-    return toDto(row);
+    return toDto$1(row);
   },
   async update(input) {
     const db = getDb();
@@ -10070,7 +10081,7 @@ const companyService = {
       updateValues.contactNumber = patch.contactNumber ?? null;
     const [row] = await db.update(companies).set(updateValues).where(eq(companies.id, id)).returning();
     if (!row) throw new Error(`Company ${id} not found`);
-    return toDto(row);
+    return toDto$1(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -10136,10 +10147,122 @@ function registerCompanyIpc() {
     return { ok: true };
   });
 }
+function toDto(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
+    deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1e3) : null
+  };
+}
+async function assertNameAvailable(name, excludeId) {
+  const db = getDb();
+  const conditions = [isNull(categories.deletedAt), eq(categories.name, name)];
+  if (excludeId !== void 0) {
+    conditions.push(ne(categories.id, excludeId));
+  }
+  const [existing] = await db.select({ id: categories.id }).from(categories).where(and(...conditions)).limit(1);
+  if (existing) {
+    throw new Error(`Category "${name}" already exists`);
+  }
+}
+const categoryService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) conditions.push(isNull(categories.deletedAt));
+    if (query.search) {
+      conditions.push(like(categories.name, `%${query.search}%`));
+    }
+    const rows = await db.select().from(categories).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(categories.name)).limit(query.limit).offset(query.offset);
+    return rows.map(toDto);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
+    return rows[0] ? toDto(rows[0]) : null;
+  },
+  async create(input) {
+    await assertNameAvailable(input.name);
+    const db = getDb();
+    const [row] = await db.insert(categories).values({ name: input.name }).returning();
+    return toDto(row);
+  },
+  async update(input) {
+    if (input.name !== void 0) {
+      await assertNameAvailable(input.name, input.id);
+    }
+    const db = getDb();
+    const updateValues = { updatedAt: /* @__PURE__ */ new Date() };
+    if (input.name !== void 0) updateValues.name = input.name;
+    const [row] = await db.update(categories).set(updateValues).where(eq(categories.id, input.id)).returning();
+    if (!row) throw new Error(`Category ${input.id} not found`);
+    return toDto(row);
+  },
+  async softDelete(id) {
+    const db = getDb();
+    await db.update(categories).set({ deletedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq(categories.id, id));
+  },
+  async restore(id) {
+    const db = getDb();
+    await db.update(categories).set({ deletedAt: null, updatedAt: /* @__PURE__ */ new Date() }).where(eq(categories.id, id));
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) conditions.push(isNull(categories.deletedAt));
+    if (query.search) conditions.push(like(categories.name, `%${query.search}%`));
+    const [row] = await db.select({ count: sql`count(*)` }).from(categories).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  }
+};
+const createCategorySchema = object({
+  name: string().trim().min(1, "Name is required").max(80, "Name is too long")
+});
+const updateCategorySchema = createCategorySchema.partial().extend({
+  id: number().int().positive()
+});
+const categoryListQuerySchema = object({
+  search: string().trim().optional(),
+  includeDeleted: boolean().optional().default(false),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerCategoryIpc() {
+  require$$3$1.ipcMain.handle("category:list", async (_e, rawQuery) => {
+    const query = categoryListQuerySchema.parse(rawQuery ?? {});
+    return categoryService.list(query);
+  });
+  require$$3$1.ipcMain.handle("category:count", async (_e, rawQuery) => {
+    const query = categoryListQuerySchema.pick({ search: true, includeDeleted: true }).parse(rawQuery ?? {});
+    return categoryService.count(query);
+  });
+  require$$3$1.ipcMain.handle("category:get", async (_e, id) => {
+    return categoryService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("category:create", async (_e, rawInput) => {
+    const input = createCategorySchema.parse(rawInput);
+    return categoryService.create(input);
+  });
+  require$$3$1.ipcMain.handle("category:update", async (_e, rawInput) => {
+    const input = updateCategorySchema.parse(rawInput);
+    return categoryService.update(input);
+  });
+  require$$3$1.ipcMain.handle("category:delete", async (_e, id) => {
+    await categoryService.softDelete(id);
+    return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("category:restore", async (_e, id) => {
+    await categoryService.restore(id);
+    return { ok: true };
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
   registerCompanyIpc();
+  registerCategoryIpc();
 }
 if (started) {
   require$$3$1.app.quit();

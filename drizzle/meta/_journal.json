@@ -15,6 +15,13 @@
       "when": 1789195518634,
       "tag": "0001_dry_war_machine",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789196237075,
+      "tag": "0002_nifty_logan",
+      "breakpoints": true
     }
   ]
 }

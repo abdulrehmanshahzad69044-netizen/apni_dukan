@@ -22,6 +22,15 @@ const api = {
     update: (input) => electron.ipcRenderer.invoke("company:update", input),
     delete: (id) => electron.ipcRenderer.invoke("company:delete", id),
     restore: (id) => electron.ipcRenderer.invoke("company:restore", id)
+  },
+  category: {
+    list: (query) => electron.ipcRenderer.invoke("category:list", query ?? {}),
+    count: (query) => electron.ipcRenderer.invoke("category:count", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("category:get", id),
+    create: (input) => electron.ipcRenderer.invoke("category:create", input),
+    update: (input) => electron.ipcRenderer.invoke("category:update", input),
+    delete: (id) => electron.ipcRenderer.invoke("category:delete", id),
+    restore: (id) => electron.ipcRenderer.invoke("category:restore", id)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

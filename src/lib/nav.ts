@@ -10,13 +10,13 @@ import {
   TrendingDown,
   BarChart3,
   Settings,
+  Tag,
 } from "lucide-react";
 
 export type NavItem = {
   label: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** Show in the bottom nav on narrow widths. Keep it to 4 max. */
   mobile?: boolean;
 };
 
@@ -26,6 +26,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Customers", to: "/customers", icon: Users, mobile: true },
   { label: "Inventory", to: "/inventory", icon: Boxes, mobile: true },
   { label: "Products", to: "/products", icon: Package },
+  { label: "Categories", to: "/categories", icon: Tag },
   { label: "Companies", to: "/companies", icon: Building2 },
   { label: "Khaata", to: "/khaata", icon: BookOpen },
   { label: "Payments", to: "/payments", icon: Wallet },
