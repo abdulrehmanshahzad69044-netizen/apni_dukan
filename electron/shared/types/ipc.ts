@@ -4,13 +4,18 @@ import type {
   CustomerListQuery,
   UpdateCustomerInput,
 } from "./customer";
+import type {
+  Company,
+  CompanyListQuery,
+  CreateCompanyInput,
+  UpdateCompanyInput,
+} from "./company";
 
 export type IpcChannels = {
   "app:ping": {
     request: { message: string };
     response: { reply: string; timestamp: number };
   };
-
   "app:version": {
     request: void;
     response: { app: string; electron: string; node: string; chrome: string };
@@ -34,6 +39,17 @@ export type AppApi = {
     get: (id: number) => Promise<Customer | null>;
     create: (input: CreateCustomerInput) => Promise<Customer>;
     update: (input: UpdateCustomerInput) => Promise<Customer>;
+    delete: (id: number) => Promise<{ ok: true }>;
+    restore: (id: number) => Promise<{ ok: true }>;
+  };
+  company: {
+    list: (query?: Partial<CompanyListQuery>) => Promise<Company[]>;
+    count: (
+      query?: Pick<CompanyListQuery, "search" | "includeDeleted">
+    ) => Promise<number>;
+    get: (id: number) => Promise<Company | null>;
+    create: (input: CreateCompanyInput) => Promise<Company>;
+    update: (input: UpdateCompanyInput) => Promise<Company>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };

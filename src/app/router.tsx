@@ -1,7 +1,9 @@
 import { Routes, Route } from "react-router-dom";
 import { AppLayout } from "./layouts/AppLayout";
-import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { ComingSoonPage } from "../features/_placeholders/ComingSoonPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
+import { CustomersPage } from "@/features/customers/CustomersPage";
+import { CompaniesPage } from "@/features/companies/CompaniesPage";
+import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
   return (
@@ -9,8 +11,8 @@ export function AppRouter() {
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="billing" element={<ComingSoonPage title="Billing" />} />
-        <Route path="customers" element={<ComingSoonPage title="Customers" />} />
-        <Route path="companies" element={<ComingSoonPage title="Companies" />} />
+        <Route path="customers" element={<CustomersPage />} />
+        <Route path="companies" element={<CompaniesPage />} />
         <Route path="products" element={<ComingSoonPage title="Products" />} />
         <Route path="inventory" element={<ComingSoonPage title="Inventory" />} />
         <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />

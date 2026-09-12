@@ -5379,8 +5379,26 @@ const customersRelations = relations(customers, ({ many }) => ({
   // Forward references declared in their own modules.
   // Drizzle resolves them via the barrel file.
 }));
+const companies = sqliteTable(
+  "companies",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    contactNumber: text("contact_number"),
+    ...timestamps,
+    ...softDelete
+  },
+  (t) => ({
+    nameIdx: index("companies_name_idx").on(t.name)
+  })
+);
+const companiesRelations = relations(companies, ({ many }) => ({
+  // Populated when products / purchases / company-payments exist.
+}));
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
+  companies,
+  companiesRelations,
   customers,
   customersRelations,
   money,
@@ -5469,7 +5487,7 @@ function registerAppIpc() {
     }
   );
 }
-function toDto(row) {
+function toDto$1(row) {
   return {
     id: row.id,
     name: row.name,
@@ -5498,12 +5516,12 @@ const customerService = {
       );
     }
     const rows = await db.select().from(customers).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(customers.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto);
+    return rows.map(toDto$1);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
-    return rows[0] ? toDto(rows[0]) : null;
+    return rows[0] ? toDto$1(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -5512,7 +5530,7 @@ const customerService = {
       contactNumber: input.contactNumber ?? null,
       address: input.address ?? null
     }).returning();
-    return toDto(row);
+    return toDto$1(row);
   },
   async update(input) {
     const db = getDb();
@@ -5527,7 +5545,7 @@ const customerService = {
       updateValues.address = patch.address ?? null;
     const [row] = await db.update(customers).set(updateValues).where(eq(customers.id, id)).returning();
     if (!row) throw new Error(`Customer ${id} not found`);
-    return toDto(row);
+    return toDto$1(row);
   },
   /**
    * Soft delete. Never physically removes.
@@ -10004,9 +10022,124 @@ function registerCustomerIpc() {
     return { ok: true };
   });
 }
+function toDto(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    contactNumber: row.contactNumber ?? null,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
+    deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1e3) : null
+  };
+}
+const companyService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) {
+      conditions.push(isNull(companies.deletedAt));
+    }
+    if (query.search && query.search.length > 0) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(like(companies.name, term), like(companies.contactNumber, term))
+      );
+    }
+    const rows = await db.select().from(companies).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(companies.name)).limit(query.limit).offset(query.offset);
+    return rows.map(toDto);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
+    return rows[0] ? toDto(rows[0]) : null;
+  },
+  async create(input) {
+    const db = getDb();
+    const [row] = await db.insert(companies).values({
+      name: input.name,
+      contactNumber: input.contactNumber ?? null
+    }).returning();
+    return toDto(row);
+  },
+  async update(input) {
+    const db = getDb();
+    const { id, ...patch } = input;
+    const updateValues = { updatedAt: /* @__PURE__ */ new Date() };
+    if (patch.name !== void 0) updateValues.name = patch.name;
+    if (patch.contactNumber !== void 0)
+      updateValues.contactNumber = patch.contactNumber ?? null;
+    const [row] = await db.update(companies).set(updateValues).where(eq(companies.id, id)).returning();
+    if (!row) throw new Error(`Company ${id} not found`);
+    return toDto(row);
+  },
+  async softDelete(id) {
+    const db = getDb();
+    await db.update(companies).set({ deletedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq(companies.id, id));
+  },
+  async restore(id) {
+    const db = getDb();
+    await db.update(companies).set({ deletedAt: null, updatedAt: /* @__PURE__ */ new Date() }).where(eq(companies.id, id));
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) conditions.push(isNull(companies.deletedAt));
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(like(companies.name, term), like(companies.contactNumber, term))
+      );
+    }
+    const [row] = await db.select({ count: sql`count(*)` }).from(companies).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  }
+};
+const createCompanySchema = object({
+  name: string().trim().min(1, "Name is required").max(120, "Name is too long"),
+  contactNumber: string().trim().max(30).optional().or(literal("")).transform((v) => v === "" ? void 0 : v)
+});
+const updateCompanySchema = createCompanySchema.partial().extend({
+  id: number().int().positive()
+});
+const companyListQuerySchema = object({
+  search: string().trim().optional(),
+  includeDeleted: boolean().optional().default(false),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerCompanyIpc() {
+  require$$3$1.ipcMain.handle("company:list", async (_e, rawQuery) => {
+    const query = companyListQuerySchema.parse(rawQuery ?? {});
+    return companyService.list(query);
+  });
+  require$$3$1.ipcMain.handle("company:count", async (_e, rawQuery) => {
+    const query = companyListQuerySchema.pick({ search: true, includeDeleted: true }).parse(rawQuery ?? {});
+    return companyService.count(query);
+  });
+  require$$3$1.ipcMain.handle("company:get", async (_e, id) => {
+    return companyService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("company:create", async (_e, rawInput) => {
+    const input = createCompanySchema.parse(rawInput);
+    return companyService.create(input);
+  });
+  require$$3$1.ipcMain.handle("company:update", async (_e, rawInput) => {
+    const input = updateCompanySchema.parse(rawInput);
+    return companyService.update(input);
+  });
+  require$$3$1.ipcMain.handle("company:delete", async (_e, id) => {
+    await companyService.softDelete(id);
+    return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("company:restore", async (_e, id) => {
+    await companyService.restore(id);
+    return { ok: true };
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
+  registerCompanyIpc();
 }
 if (started) {
   require$$3$1.app.quit();

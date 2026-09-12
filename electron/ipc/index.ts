@@ -1,15 +1,12 @@
 import { registerAppIpc } from "./app.ipc";
 import { registerCustomerIpc } from "./customer.ipc";
+import { registerCompanyIpc } from "./company.ipc";
 
-/**
- * Registers ALL IPC handlers.
- * Add new modules here as they're built.
- */
 export function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
+  registerCompanyIpc();
   // Phase 1:
-  // registerCompanyIpc();
   // registerCategoryIpc();
   // registerUnitIpc();
   // registerProductIpc();

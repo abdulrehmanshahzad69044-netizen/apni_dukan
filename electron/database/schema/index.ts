@@ -2,9 +2,8 @@
 export * from "./_shared";
 
 // Module schemas — added progressively as we build each module.
-// Phase 1 will uncomment these one by one:
 export * from "./customers";
-// export * from "./companies";
+export * from "./companies";
 // export * from "./categories";
 // export * from "./units";
 // export * from "./products";
