@@ -48,6 +48,15 @@ const api: AppApi = {
     update: (input) => ipcRenderer.invoke("unitConversion:update", input),
     delete: (id) => ipcRenderer.invoke("unitConversion:delete", id),
   },
+  product: {
+    list: (query) => ipcRenderer.invoke("product:list", query ?? {}),
+    count: (query) => ipcRenderer.invoke("product:count", query ?? {}),
+    get: (id) => ipcRenderer.invoke("product:get", id),
+    create: (input) => ipcRenderer.invoke("product:create", input),
+    update: (input) => ipcRenderer.invoke("product:update", input),
+    delete: (id) => ipcRenderer.invoke("product:delete", id),
+    restore: (id) => ipcRenderer.invoke("product:restore", id),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

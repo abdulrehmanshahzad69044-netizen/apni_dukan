@@ -3,6 +3,7 @@ import { registerCustomerIpc } from "./customer.ipc";
 import { registerCompanyIpc } from "./company.ipc";
 import { registerCategoryIpc } from "./category.ipc";
 import { registerUnitIpc } from "./unit.ipc";
+import { registerProductIpc } from "./product.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -10,7 +11,7 @@ export function registerAllIpc() {
   registerCompanyIpc();
   registerCategoryIpc();
   registerUnitIpc();
+  registerProductIpc();
   // Phase 1:
-  // registerProductIpc();
   // registerVariantIpc();
 }

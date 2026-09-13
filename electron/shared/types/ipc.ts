@@ -25,6 +25,12 @@ import type {
   UpdateUnitConversionInput,
   UpdateUnitInput,
 } from "./unit";
+import type {
+  CreateProductInput,
+  Product,
+  ProductListQuery,
+  UpdateProductInput,
+} from "./product";
 
 export type IpcChannels = {
   "app:ping": {
@@ -95,6 +101,20 @@ export type AppApi = {
     create: (input: CreateUnitConversionInput) => Promise<UnitConversion>;
     update: (input: UpdateUnitConversionInput) => Promise<UnitConversion>;
     delete: (id: number) => Promise<{ ok: true }>;
+  };
+  product: {
+    list: (query?: Partial<ProductListQuery>) => Promise<Product[]>;
+    count: (
+      query?: Pick<
+        ProductListQuery,
+        "search" | "includeDeleted" | "categoryId" | "companyId"
+      >
+    ) => Promise<number>;
+    get: (id: number) => Promise<Product | null>;
+    create: (input: CreateProductInput) => Promise<Product>;
+    update: (input: UpdateProductInput) => Promise<Product>;
+    delete: (id: number) => Promise<{ ok: true }>;
+    restore: (id: number) => Promise<{ ok: true }>;
   };
 };
 
