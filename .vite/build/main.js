@@ -5548,6 +5548,99 @@ const variantsRelations = relations(variants, ({ one, many }) => ({
   })
   // batches: many(stockBatches), — added in Phase 2
 }));
+const stockLedger = sqliteTable(
+  "stock_ledger",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    batchId: integer$1("batch_id").notNull().references(() => stockBatches.id),
+    variantId: integer$1("variant_id").notNull().references(() => variants.id),
+    // Positive = stock in, negative = stock out
+    quantityChange: quantity("quantity_change").notNull(),
+    unitCost: money("unit_cost").notNull(),
+    movementType: text("movement_type", {
+      enum: ["purchase", "sale", "adjustment", "damage", "return"]
+    }).notNull(),
+    // Polymorphic reference: which purchase / bill / adjustment caused this.
+    referenceType: text("reference_type", {
+      enum: ["purchase", "bill", "adjustment"]
+    }),
+    referenceId: integer$1("reference_id"),
+    notes: text("notes"),
+    ...timestamps
+  },
+  (t) => ({
+    batchIdx: index("stock_ledger_batch_idx").on(t.batchId),
+    variantIdx: index("stock_ledger_variant_idx").on(t.variantId),
+    refIdx: index("stock_ledger_ref_idx").on(t.referenceType, t.referenceId),
+    typeIdx: index("stock_ledger_type_idx").on(t.movementType),
+    dateIdx: index("stock_ledger_created_idx").on(t.createdAt)
+  })
+);
+const stockLedgerRelations = relations(stockLedger, ({ one }) => ({
+  batch: one(stockBatches, {
+    fields: [stockLedger.batchId],
+    references: [stockBatches.id]
+  }),
+  variant: one(variants, {
+    fields: [stockLedger.variantId],
+    references: [variants.id]
+  })
+}));
+const stockBatches = sqliteTable(
+  "stock_batches",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    variantId: integer$1("variant_id").notNull().references(() => variants.id),
+    purchaseId: integer$1("purchase_id").notNull().references(() => purchases.id),
+    purchasePrice: money("purchase_price").notNull(),
+    suggestedRetailPrice: money("suggested_retail_price"),
+    suggestedWholesalePrice: money("suggested_wholesale_price"),
+    quantityPurchased: quantity("quantity_purchased").notNull(),
+    remainingQuantity: quantity("remaining_quantity").notNull(),
+    purchaseDate: integer$1("purchase_date", { mode: "timestamp" }).notNull(),
+    ...timestamps
+  },
+  (t) => ({
+    variantIdx: index("stock_batches_variant_idx").on(t.variantId),
+    // Composite index for FIFO queries: oldest-first, per variant
+    fifoIdx: index("stock_batches_fifo_idx").on(t.variantId, t.purchaseDate)
+  })
+);
+const stockBatchesRelations = relations(stockBatches, ({ one, many }) => ({
+  variant: one(variants, {
+    fields: [stockBatches.variantId],
+    references: [variants.id]
+  }),
+  purchase: one(purchases, {
+    fields: [stockBatches.purchaseId],
+    references: [purchases.id]
+  }),
+  ledgerEntries: many(stockLedger)
+}));
+const purchases = sqliteTable(
+  "purchases",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    purchaseNumber: text("purchase_number").notNull().unique(),
+    companyId: integer$1("company_id").notNull().references(() => companies.id),
+    purchaseDate: integer$1("purchase_date", { mode: "timestamp" }).notNull(),
+    totalAmount: money("total_amount").notNull(),
+    paidAmount: money("paid_amount").notNull().default(0),
+    remarks: text("remarks"),
+    ...timestamps
+  },
+  (t) => ({
+    companyIdx: index("purchases_company_idx").on(t.companyId),
+    dateIdx: index("purchases_date_idx").on(t.purchaseDate)
+  })
+);
+const purchasesRelations = relations(purchases, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [purchases.companyId],
+    references: [companies.id]
+  }),
+  batches: many(stockBatches)
+}));
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   categories,
@@ -5559,8 +5652,14 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   money,
   products,
   productsRelations,
+  purchases,
+  purchasesRelations,
   quantity,
   softDelete,
+  stockBatches,
+  stockBatchesRelations,
+  stockLedger,
+  stockLedgerRelations,
   timestamps,
   unitConversions,
   unitConversionsRelations,
@@ -6376,7 +6475,7 @@ const base64url = /^[A-Za-z0-9_-]*$/;
 const httpProtocol = /^https?$/;
 const e164 = /^\+[1-9]\d{6,14}$/;
 const dateSource = `(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))`;
-const date$1 = /* @__PURE__ */ new RegExp(`^${dateSource}$`);
+const date$2 = /* @__PURE__ */ new RegExp(`^${dateSource}$`);
 function timeSource(args) {
   const hhmm = `(?:[01]\\d|2[0-3]):[0-5]\\d`;
   const regex = typeof args.precision === "number" ? args.precision === -1 ? `${hhmm}` : args.precision === 0 ? `${hhmm}:[0-5]\\d` : `${hhmm}:[0-5]\\d\\.\\d{${args.precision}}` : `${hhmm}(?::[0-5]\\d(?:\\.\\d+)?)?`;
@@ -7091,7 +7190,7 @@ const $ZodISODateTime = /* @__PURE__ */ $constructor("$ZodISODateTime", (inst, d
   $ZodStringFormat.init(inst, def);
 });
 const $ZodISODate = /* @__PURE__ */ $constructor("$ZodISODate", (inst, def) => {
-  def.pattern ?? (def.pattern = date$1);
+  def.pattern ?? (def.pattern = date$2);
   $ZodStringFormat.init(inst, def);
 });
 const $ZodISOTime = /* @__PURE__ */ $constructor("$ZodISOTime", (inst, def) => {
@@ -7308,6 +7407,30 @@ const $ZodNever = /* @__PURE__ */ $constructor("$ZodNever", (inst, def) => {
       expected: "never",
       code: "invalid_type",
       input: payload.value,
+      inst
+    });
+    return payload;
+  };
+});
+const $ZodDate = /* @__PURE__ */ $constructor("$ZodDate", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.parse = (payload, _ctx) => {
+    if (def.coerce) {
+      try {
+        payload.value = new Date(payload.value);
+      } catch (_err) {
+      }
+    }
+    const input = payload.value;
+    const isDate = input instanceof Date;
+    const isValidDate = isDate && !Number.isNaN(input.getTime());
+    if (isValidDate)
+      return payload;
+    payload.issues.push({
+      expected: "date",
+      code: "invalid_type",
+      input,
+      ...isDate ? { received: "Invalid Date" } : {},
       inst
     });
     return payload;
@@ -8451,6 +8574,14 @@ function _never(Class, params) {
   });
 }
 // @__NO_SIDE_EFFECTS__
+function _coercedDate(Class, params) {
+  return new Class({
+    type: "date",
+    coerce: true,
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
 function _lt(value, params) {
   return new $ZodCheckLessThan({
     check: "less_than",
@@ -9086,6 +9217,11 @@ const neverProcessor = (_schema, _ctx, json, _params) => {
 };
 const unknownProcessor = (_schema, _ctx, _json, _params) => {
 };
+const dateProcessor = (_schema, ctx, _json, _params) => {
+  if (ctx.unrepresentable === "throw") {
+    throw new Error("Date cannot be represented in JSON Schema");
+  }
+};
 const enumProcessor = (schema2, _ctx, json, _params) => {
   const def = schema2._zod.def;
   const values = getEnumValues(def.entries);
@@ -9301,7 +9437,7 @@ const ZodISODate = /* @__PURE__ */ $constructor("ZodISODate", (inst, def) => {
   $ZodISODate.init(inst, def);
   ZodStringFormat.init(inst, def);
 });
-function date(params) {
+function date$1(params) {
   return /* @__PURE__ */ _isoDate(ZodISODate, params);
 }
 const ZodISOTime = /* @__PURE__ */ $constructor("ZodISOTime", (inst, def) => {
@@ -9616,7 +9752,7 @@ const ZodString = /* @__PURE__ */ $constructor("ZodString", (inst, def) => {
   inst.cidrv6 = (params) => inst.check(/* @__PURE__ */ _cidrv6(ZodCIDRv6, params));
   inst.e164 = (params) => inst.check(/* @__PURE__ */ _e164(ZodE164, params));
   inst.datetime = (params) => inst.check(datetime(params));
-  inst.date = (params) => inst.check(date(params));
+  inst.date = (params) => inst.check(date$1(params));
   inst.time = (params) => inst.check(time(params));
   inst.duration = (params) => inst.check(duration(params));
 });
@@ -9795,6 +9931,16 @@ const ZodNever = /* @__PURE__ */ $constructor("ZodNever", (inst, def) => {
 function never(params) {
   return /* @__PURE__ */ _never(ZodNever, params);
 }
+const ZodDate = /* @__PURE__ */ $constructor("ZodDate", (inst, def) => {
+  $ZodDate.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => dateProcessor(inst, ctx);
+  inst.min = (value, params) => inst.check(/* @__PURE__ */ _gte(value, params));
+  inst.max = (value, params) => inst.check(/* @__PURE__ */ _lte(value, params));
+  const c = inst._zod.bag;
+  inst.minDate = c.minimum ? new Date(c.minimum) : null;
+  inst.maxDate = c.maximum ? new Date(c.maximum) : null;
+});
 const ZodArray = /* @__PURE__ */ $constructor("ZodArray", (inst, def) => {
   $ZodArray.init(inst, def);
   ZodType.init(inst, def);
@@ -10141,6 +10287,9 @@ function refine(fn, _params = {}) {
 }
 function superRefine(fn, params) {
   return /* @__PURE__ */ _superRefine(fn, params);
+}
+function date(params) {
+  return /* @__PURE__ */ _coercedDate(ZodDate, params);
 }
 const createCustomerSchema = object({
   name: string().trim().min(1, "Name is required").max(120, "Name is too long"),
@@ -10933,6 +11082,234 @@ function registerVariantIpc() {
     return { ok: true };
   });
 }
+function toPurchaseDto(row) {
+  return {
+    id: row.id,
+    purchaseNumber: row.purchaseNumber,
+    companyId: row.companyId,
+    companyName: row.companyName,
+    purchaseDate: Math.floor(row.purchaseDate.getTime() / 1e3),
+    totalAmount: row.totalAmount,
+    paidAmount: row.paidAmount,
+    remarks: row.remarks,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3)
+  };
+}
+async function generatePurchaseNumber() {
+  const db = getDb();
+  const year = (/* @__PURE__ */ new Date()).getFullYear();
+  const prefix = `PUR-${year}-`;
+  const [row] = await db.select({ max: sql`max(${purchases.purchaseNumber})` }).from(purchases).where(like(purchases.purchaseNumber, `${prefix}%`));
+  const lastNumber = row?.max ? parseInt(row.max.slice(prefix.length), 10) : 0;
+  const next = (lastNumber + 1).toString().padStart(4, "0");
+  return `${prefix}${next}`;
+}
+const purchaseService = {
+  /**
+   * Create a purchase + batches + ledger entries in ONE transaction.
+   * If any step fails, nothing is written.
+   */
+  async create(input) {
+    const db = getDb();
+    const totalAmount = input.lines.reduce(
+      (sum, line) => sum + line.quantity * line.purchasePrice,
+      0
+    );
+    const purchaseDate = input.purchaseDate ?? /* @__PURE__ */ new Date();
+    const purchaseNumber = await generatePurchaseNumber();
+    const insertedId = db.transaction((tx) => {
+      const [purchase] = tx.insert(purchases).values({
+        purchaseNumber,
+        companyId: input.companyId,
+        purchaseDate,
+        totalAmount,
+        paidAmount: input.paidAmount ?? 0,
+        remarks: input.remarks ?? null
+      }).returning({ id: purchases.id }).all();
+      for (const line of input.lines) {
+        const [batch] = tx.insert(stockBatches).values({
+          variantId: line.variantId,
+          purchaseId: purchase.id,
+          purchasePrice: line.purchasePrice,
+          suggestedRetailPrice: line.suggestedRetailPrice ?? null,
+          suggestedWholesalePrice: line.suggestedWholesalePrice ?? null,
+          quantityPurchased: line.quantity,
+          remainingQuantity: line.quantity,
+          purchaseDate
+        }).returning({ id: stockBatches.id }).all();
+        tx.insert(stockLedger).values({
+          batchId: batch.id,
+          variantId: line.variantId,
+          quantityChange: line.quantity,
+          // positive = stock in
+          unitCost: line.purchasePrice,
+          movementType: "purchase",
+          referenceType: "purchase",
+          referenceId: purchase.id,
+          notes: null
+        }).run();
+      }
+      return purchase.id;
+    });
+    const created = await this.getById(insertedId);
+    if (!created) throw new Error("Failed to load created purchase");
+    return created;
+  },
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.companyId) {
+      conditions.push(eq(purchases.companyId, query.companyId));
+    }
+    if (query.fromDate) {
+      conditions.push(gte(purchases.purchaseDate, query.fromDate));
+    }
+    if (query.toDate) {
+      conditions.push(lte(purchases.purchaseDate, query.toDate));
+    }
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(
+          like(purchases.purchaseNumber, term),
+          like(sql`c.name`, term)
+        )
+      );
+    }
+    const rows = await db.select({
+      id: purchases.id,
+      purchaseNumber: purchases.purchaseNumber,
+      companyId: purchases.companyId,
+      purchaseDate: purchases.purchaseDate,
+      totalAmount: purchases.totalAmount,
+      paidAmount: purchases.paidAmount,
+      remarks: purchases.remarks,
+      createdAt: purchases.createdAt,
+      updatedAt: purchases.updatedAt,
+      companyName: sql`c.name`
+    }).from(purchases).innerJoin(sql`companies AS c`, sql`c.id = ${purchases.companyId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(purchases.purchaseDate), desc(purchases.id)).limit(query.limit).offset(query.offset);
+    return rows.map(toPurchaseDto);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select({
+      id: purchases.id,
+      purchaseNumber: purchases.purchaseNumber,
+      companyId: purchases.companyId,
+      purchaseDate: purchases.purchaseDate,
+      totalAmount: purchases.totalAmount,
+      paidAmount: purchases.paidAmount,
+      remarks: purchases.remarks,
+      createdAt: purchases.createdAt,
+      updatedAt: purchases.updatedAt,
+      companyName: sql`c.name`
+    }).from(purchases).innerJoin(sql`companies AS c`, sql`c.id = ${purchases.companyId}`).where(eq(purchases.id, id)).limit(1);
+    return rows[0] ? toPurchaseDto(rows[0]) : null;
+  },
+  /**
+   * Get all batches created by a specific purchase.
+   */
+  async getBatches(purchaseId) {
+    const db = getDb();
+    const rows = await db.select({
+      id: stockBatches.id,
+      variantId: stockBatches.variantId,
+      purchaseId: stockBatches.purchaseId,
+      purchasePrice: stockBatches.purchasePrice,
+      suggestedRetailPrice: stockBatches.suggestedRetailPrice,
+      suggestedWholesalePrice: stockBatches.suggestedWholesalePrice,
+      quantityPurchased: stockBatches.quantityPurchased,
+      remainingQuantity: stockBatches.remainingQuantity,
+      purchaseDate: stockBatches.purchaseDate,
+      variantName: sql`v.name`,
+      productName: sql`p.name`,
+      baseUnitShortName: sql`u.short_name`,
+      purchaseNumber: sql`pur.purchase_number`
+    }).from(stockBatches).innerJoin(sql`variants AS v`, sql`v.id = ${stockBatches.variantId}`).innerJoin(sql`products AS p`, sql`p.id = v.product_id`).innerJoin(sql`units AS u`, sql`u.id = v.base_unit_id`).innerJoin(
+      sql`purchases AS pur`,
+      sql`pur.id = ${stockBatches.purchaseId}`
+    ).where(eq(stockBatches.purchaseId, purchaseId)).orderBy(asc(stockBatches.id));
+    return rows.map((row) => ({
+      id: row.id,
+      variantId: row.variantId,
+      variantName: row.variantName,
+      productName: row.productName,
+      baseUnitShortName: row.baseUnitShortName,
+      purchaseId: row.purchaseId,
+      purchaseNumber: row.purchaseNumber,
+      purchasePrice: row.purchasePrice,
+      suggestedRetailPrice: row.suggestedRetailPrice,
+      suggestedWholesalePrice: row.suggestedWholesalePrice,
+      quantityPurchased: row.quantityPurchased,
+      remainingQuantity: row.remainingQuantity,
+      purchaseDate: Math.floor(row.purchaseDate.getTime() / 1e3)
+    }));
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.companyId)
+      conditions.push(eq(purchases.companyId, query.companyId));
+    if (query.fromDate)
+      conditions.push(gte(purchases.purchaseDate, query.fromDate));
+    if (query.toDate)
+      conditions.push(lte(purchases.purchaseDate, query.toDate));
+    const [row] = await db.select({ count: sql`count(*)` }).from(purchases).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  },
+  /**
+   * Update paid amount (used for company payments later).
+   * Not a full CRUD update — purchases are immutable documents.
+   */
+  async setPaidAmount(id, paidAmount) {
+    const db = getDb();
+    await db.update(purchases).set({ paidAmount, updatedAt: /* @__PURE__ */ new Date() }).where(eq(purchases.id, id));
+  }
+};
+const purchaseLineSchema = object({
+  variantId: number().int().positive(),
+  quantity: number().int().positive("Quantity must be positive"),
+  purchasePrice: number().int().nonnegative("Price cannot be negative"),
+  suggestedRetailPrice: number().int().nonnegative().nullable().optional(),
+  suggestedWholesalePrice: number().int().nonnegative().nullable().optional()
+});
+const createPurchaseSchema = object({
+  companyId: number().int().positive(),
+  purchaseDate: date().optional(),
+  paidAmount: number().int().nonnegative().optional().default(0),
+  remarks: string().trim().max(500).optional().or(literal("")).transform((v) => v === "" ? void 0 : v),
+  lines: array(purchaseLineSchema).min(1, "Add at least one line")
+});
+const purchaseListQuerySchema = object({
+  search: string().trim().optional(),
+  // searches purchase number / company name
+  companyId: number().int().positive().optional(),
+  fromDate: date().optional(),
+  toDate: date().optional(),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerPurchaseIpc() {
+  require$$3$1.ipcMain.handle("purchase:list", async (_e, rawQuery) => {
+    const query = purchaseListQuerySchema.parse(rawQuery ?? {});
+    return purchaseService.list(query);
+  });
+  require$$3$1.ipcMain.handle("purchase:count", async (_e, rawQuery) => {
+    const query = purchaseListQuerySchema.pick({ companyId: true, fromDate: true, toDate: true }).parse(rawQuery ?? {});
+    return purchaseService.count(query);
+  });
+  require$$3$1.ipcMain.handle("purchase:get", async (_e, id) => {
+    return purchaseService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("purchase:getBatches", async (_e, purchaseId) => {
+    return purchaseService.getBatches(purchaseId);
+  });
+  require$$3$1.ipcMain.handle("purchase:create", async (_e, rawInput) => {
+    const input = createPurchaseSchema.parse(rawInput);
+    return purchaseService.create(input);
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -10941,6 +11318,7 @@ function registerAllIpc() {
   registerUnitIpc();
   registerProductIpc();
   registerVariantIpc();
+  registerPurchaseIpc();
 }
 if (started) {
   require$$3$1.app.quit();

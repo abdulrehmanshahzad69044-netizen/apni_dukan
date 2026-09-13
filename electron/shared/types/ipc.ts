@@ -37,6 +37,12 @@ import type {
   Variant,
   VariantListQuery,
 } from "./variant";
+import type {
+  CreatePurchaseInput,
+  Purchase,
+  PurchaseListQuery,
+  StockBatch,
+} from "./purchase";
 
 export type IpcChannels = {
   "app:ping": {
@@ -132,6 +138,15 @@ export type AppApi = {
     update: (input: UpdateVariantInput) => Promise<Variant>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
+  };
+  purchase: {
+    list: (query?: Partial<PurchaseListQuery>) => Promise<Purchase[]>;
+    count: (
+      query?: Pick<PurchaseListQuery, "companyId" | "fromDate" | "toDate">
+    ) => Promise<number>;
+    get: (id: number) => Promise<Purchase | null>;
+    getBatches: (purchaseId: number) => Promise<StockBatch[]>;
+    create: (input: CreatePurchaseInput) => Promise<Purchase>;
   };
 };
 

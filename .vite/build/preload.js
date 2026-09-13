@@ -64,6 +64,13 @@ const api = {
     update: (input) => electron.ipcRenderer.invoke("variant:update", input),
     delete: (id) => electron.ipcRenderer.invoke("variant:delete", id),
     restore: (id) => electron.ipcRenderer.invoke("variant:restore", id)
+  },
+  purchase: {
+    list: (query) => electron.ipcRenderer.invoke("purchase:list", query ?? {}),
+    count: (query) => electron.ipcRenderer.invoke("purchase:count", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("purchase:get", id),
+    getBatches: (purchaseId) => electron.ipcRenderer.invoke("purchase:getBatches", purchaseId),
+    create: (input) => electron.ipcRenderer.invoke("purchase:create", input)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

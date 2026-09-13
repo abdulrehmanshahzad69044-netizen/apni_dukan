@@ -1,17 +1,19 @@
 // Shared helpers (money, quantity, timestamps, softDelete)
 export * from "./_shared";
 
-// Module schemas — added progressively as we build each module.
+// Module schemas
 export * from "./customers";
 export * from "./companies";
 export * from "./categories";
 export * from "./units";
 export * from "./products";
 export * from "./variants";
-// Phase 2:
-// export * from "./purchases";
-// export * from "./stock-batches";
-// export * from "./stock-ledger";
+
+// Phase 2 — Inventory
+export * from "./purchases";
+export * from "./stock-batches";
+export * from "./stock-ledger";
+
 // Phase 3:
 // export * from "./bills";
 // export * from "./bill-items";

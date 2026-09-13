@@ -43,6 +43,13 @@
       "when": 1789285409749,
       "tag": "0005_daffy_robin_chapel",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789317832569,
+      "tag": "0006_petite_human_torch",
+      "breakpoints": true
     }
   ]
 }
