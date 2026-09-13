@@ -7,6 +7,7 @@ import { CategoriesPage } from "@/features/categories/CategoriesPage";
 import { UnitsPage } from "@/features/units/UnitsPage";
 import { UnitConversionsPage } from "@/features/units/UnitConversionsPage";
 import { ProductsPage } from "@/features/products/ProductsPage";
+import { VariantsPage } from "@/features/variants/VariantsPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -21,6 +22,7 @@ export function AppRouter() {
         <Route path="units" element={<UnitsPage />} />
         <Route path="unit-conversions" element={<UnitConversionsPage />} />
         <Route path="products" element={<ProductsPage />} />
+        <Route path="variants" element={<VariantsPage />} />
         <Route path="inventory" element={<ComingSoonPage title="Inventory" />} />
         <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />
         <Route path="payments" element={<ComingSoonPage title="Payments" />} />

@@ -55,6 +55,15 @@ const api = {
     update: (input) => electron.ipcRenderer.invoke("product:update", input),
     delete: (id) => electron.ipcRenderer.invoke("product:delete", id),
     restore: (id) => electron.ipcRenderer.invoke("product:restore", id)
+  },
+  variant: {
+    list: (query) => electron.ipcRenderer.invoke("variant:list", query ?? {}),
+    count: (query) => electron.ipcRenderer.invoke("variant:count", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("variant:get", id),
+    create: (input) => electron.ipcRenderer.invoke("variant:create", input),
+    update: (input) => electron.ipcRenderer.invoke("variant:update", input),
+    delete: (id) => electron.ipcRenderer.invoke("variant:delete", id),
+    restore: (id) => electron.ipcRenderer.invoke("variant:restore", id)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

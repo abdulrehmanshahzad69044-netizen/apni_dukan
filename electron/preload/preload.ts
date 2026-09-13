@@ -57,6 +57,15 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("product:delete", id),
     restore: (id) => ipcRenderer.invoke("product:restore", id),
   },
+  variant: {
+    list: (query) => ipcRenderer.invoke("variant:list", query ?? {}),
+    count: (query) => ipcRenderer.invoke("variant:count", query ?? {}),
+    get: (id) => ipcRenderer.invoke("variant:get", id),
+    create: (input) => ipcRenderer.invoke("variant:create", input),
+    update: (input) => ipcRenderer.invoke("variant:update", input),
+    delete: (id) => ipcRenderer.invoke("variant:delete", id),
+    restore: (id) => ipcRenderer.invoke("variant:restore", id),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

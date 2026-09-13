@@ -13,6 +13,7 @@ import {
   Tag,
   Ruler,
   ArrowRightLeft,
+  Layers,
 } from "lucide-react";
 
 export type NavItem = {
@@ -28,6 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Customers", to: "/customers", icon: Users, mobile: true },
   { label: "Inventory", to: "/inventory", icon: Boxes, mobile: true },
   { label: "Products", to: "/products", icon: Package },
+  { label: "Variants", to: "/variants", icon: Layers },
   { label: "Categories", to: "/categories", icon: Tag },
   { label: "Units", to: "/units", icon: Ruler },
   { label: "Unit Conversions", to: "/unit-conversions", icon: ArrowRightLeft },

@@ -31,6 +31,12 @@ import type {
   ProductListQuery,
   UpdateProductInput,
 } from "./product";
+import type {
+  CreateVariantInput,
+  UpdateVariantInput,
+  Variant,
+  VariantListQuery,
+} from "./variant";
 
 export type IpcChannels = {
   "app:ping": {
@@ -113,6 +119,17 @@ export type AppApi = {
     get: (id: number) => Promise<Product | null>;
     create: (input: CreateProductInput) => Promise<Product>;
     update: (input: UpdateProductInput) => Promise<Product>;
+    delete: (id: number) => Promise<{ ok: true }>;
+    restore: (id: number) => Promise<{ ok: true }>;
+  };
+  variant: {
+    list: (query?: Partial<VariantListQuery>) => Promise<Variant[]>;
+    count: (
+      query?: Pick<VariantListQuery, "search" | "includeDeleted" | "productId">
+    ) => Promise<number>;
+    get: (id: number) => Promise<Variant | null>;
+    create: (input: CreateVariantInput) => Promise<Variant>;
+    update: (input: UpdateVariantInput) => Promise<Variant>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };

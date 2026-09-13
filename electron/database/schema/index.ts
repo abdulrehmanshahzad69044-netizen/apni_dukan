@@ -7,7 +7,7 @@ export * from "./companies";
 export * from "./categories";
 export * from "./units";
 export * from "./products";
-// export * from "./variants";
+export * from "./variants";
 // Phase 2:
 // export * from "./purchases";
 // export * from "./stock-batches";

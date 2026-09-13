@@ -5521,6 +5521,33 @@ const productsRelations = relations(products, ({ one, many }) => ({
   })
   // variants: many(variants), — added in Phase 1.6
 }));
+const variants = sqliteTable(
+  "variants",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    productId: integer$1("product_id").notNull().references(() => products.id),
+    name: text("name").notNull(),
+    baseUnitId: integer$1("base_unit_id").notNull().references(() => units.id),
+    ...timestamps,
+    ...softDelete
+  },
+  (t) => ({
+    productIdx: index("variants_product_idx").on(t.productId),
+    unitIdx: index("variants_unit_idx").on(t.baseUnitId),
+    nameIdx: index("variants_name_idx").on(t.name)
+  })
+);
+const variantsRelations = relations(variants, ({ one, many }) => ({
+  product: one(products, {
+    fields: [variants.productId],
+    references: [products.id]
+  }),
+  baseUnit: one(units, {
+    fields: [variants.baseUnitId],
+    references: [units.id]
+  })
+  // batches: many(stockBatches), — added in Phase 2
+}));
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   categories,
@@ -5538,7 +5565,9 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   unitConversions,
   unitConversionsRelations,
   units,
-  unitsRelations
+  unitsRelations,
+  variants,
+  variantsRelations
 }, Symbol.toStringTag, { value: "Module" }));
 const DB_FILENAME = "apni-dukan.db";
 function getUserDataDir() {
@@ -5621,7 +5650,7 @@ function registerAppIpc() {
     }
   );
 }
-function toDto$3(row) {
+function toDto$4(row) {
   return {
     id: row.id,
     name: row.name,
@@ -5650,12 +5679,12 @@ const customerService = {
       );
     }
     const rows = await db.select().from(customers).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(customers.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$3);
+    return rows.map(toDto$4);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
-    return rows[0] ? toDto$3(rows[0]) : null;
+    return rows[0] ? toDto$4(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -5664,7 +5693,7 @@ const customerService = {
       contactNumber: input.contactNumber ?? null,
       address: input.address ?? null
     }).returning();
-    return toDto$3(row);
+    return toDto$4(row);
   },
   async update(input) {
     const db = getDb();
@@ -5679,7 +5708,7 @@ const customerService = {
       updateValues.address = patch.address ?? null;
     const [row] = await db.update(customers).set(updateValues).where(eq(customers.id, id)).returning();
     if (!row) throw new Error(`Customer ${id} not found`);
-    return toDto$3(row);
+    return toDto$4(row);
   },
   /**
    * Soft delete. Never physically removes.
@@ -10156,7 +10185,7 @@ function registerCustomerIpc() {
     return { ok: true };
   });
 }
-function toDto$2(row) {
+function toDto$3(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10180,12 +10209,12 @@ const companyService = {
       );
     }
     const rows = await db.select().from(companies).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(companies.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$2);
+    return rows.map(toDto$3);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
-    return rows[0] ? toDto$2(rows[0]) : null;
+    return rows[0] ? toDto$3(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -10193,7 +10222,7 @@ const companyService = {
       name: input.name,
       contactNumber: input.contactNumber ?? null
     }).returning();
-    return toDto$2(row);
+    return toDto$3(row);
   },
   async update(input) {
     const db = getDb();
@@ -10204,7 +10233,7 @@ const companyService = {
       updateValues.contactNumber = patch.contactNumber ?? null;
     const [row] = await db.update(companies).set(updateValues).where(eq(companies.id, id)).returning();
     if (!row) throw new Error(`Company ${id} not found`);
-    return toDto$2(row);
+    return toDto$3(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -10270,7 +10299,7 @@ function registerCompanyIpc() {
     return { ok: true };
   });
 }
-function toDto$1(row) {
+function toDto$2(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10299,18 +10328,18 @@ const categoryService = {
       conditions.push(like(categories.name, `%${query.search}%`));
     }
     const rows = await db.select().from(categories).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(categories.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$1);
+    return rows.map(toDto$2);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
-    return rows[0] ? toDto$1(rows[0]) : null;
+    return rows[0] ? toDto$2(rows[0]) : null;
   },
   async create(input) {
     await assertNameAvailable(input.name);
     const db = getDb();
     const [row] = await db.insert(categories).values({ name: input.name }).returning();
-    return toDto$1(row);
+    return toDto$2(row);
   },
   async update(input) {
     if (input.name !== void 0) {
@@ -10321,7 +10350,7 @@ const categoryService = {
     if (input.name !== void 0) updateValues.name = input.name;
     const [row] = await db.update(categories).set(updateValues).where(eq(categories.id, input.id)).returning();
     if (!row) throw new Error(`Category ${input.id} not found`);
-    return toDto$1(row);
+    return toDto$2(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -10626,7 +10655,7 @@ function registerUnitIpc() {
     return { ok: true };
   });
 }
-function toDto(row) {
+function toDto$1(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10650,7 +10679,7 @@ const productSelect = {
   categoryName: sql`cat.name`,
   companyName: sql`comp.name`
 };
-function baseJoin(query) {
+function baseJoin$1(query) {
   return query.from(products).leftJoin(sql`categories AS cat`, sql`cat.id = ${products.categoryId}`).leftJoin(sql`companies AS comp`, sql`comp.id = ${products.companyId}`);
 }
 const productService = {
@@ -10667,13 +10696,13 @@ const productService = {
     if (query.companyId) {
       conditions.push(eq(products.companyId, query.companyId));
     }
-    const rows = await baseJoin(db.select(productSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(products.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto);
+    const rows = await baseJoin$1(db.select(productSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(products.name)).limit(query.limit).offset(query.offset);
+    return rows.map(toDto$1);
   },
   async getById(id) {
     const db = getDb();
-    const rows = await baseJoin(db.select(productSelect)).where(eq(products.id, id)).limit(1);
-    return rows[0] ? toDto(rows[0]) : null;
+    const rows = await baseJoin$1(db.select(productSelect)).where(eq(products.id, id)).limit(1);
+    return rows[0] ? toDto$1(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -10768,6 +10797,142 @@ function registerProductIpc() {
     return { ok: true };
   });
 }
+function toDto(row) {
+  return {
+    id: row.id,
+    productId: row.productId,
+    productName: row.productName,
+    name: row.name,
+    baseUnitId: row.baseUnitId,
+    baseUnitName: row.baseUnitName,
+    baseUnitShortName: row.baseUnitShortName,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
+    deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1e3) : null
+  };
+}
+const variantSelect = {
+  id: variants.id,
+  productId: variants.productId,
+  name: variants.name,
+  baseUnitId: variants.baseUnitId,
+  createdAt: variants.createdAt,
+  updatedAt: variants.updatedAt,
+  deletedAt: variants.deletedAt,
+  productName: sql`p.name`,
+  baseUnitName: sql`u.name`,
+  baseUnitShortName: sql`u.short_name`
+};
+function baseJoin(query) {
+  return query.from(variants).innerJoin(sql`products AS p`, sql`p.id = ${variants.productId}`).innerJoin(sql`units AS u`, sql`u.id = ${variants.baseUnitId}`);
+}
+const variantService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) conditions.push(isNull(variants.deletedAt));
+    if (query.productId) {
+      conditions.push(eq(variants.productId, query.productId));
+    }
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(like(variants.name, term));
+    }
+    const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(variants.productId), asc(variants.name)).limit(query.limit).offset(query.offset);
+    return rows.map(toDto);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await baseJoin(db.select(variantSelect)).where(eq(variants.id, id)).limit(1);
+    return rows[0] ? toDto(rows[0]) : null;
+  },
+  async create(input) {
+    const db = getDb();
+    const [inserted] = await db.insert(variants).values({
+      productId: input.productId,
+      name: input.name,
+      baseUnitId: input.baseUnitId
+    }).returning({ id: variants.id });
+    const created = await this.getById(inserted.id);
+    if (!created) throw new Error("Failed to load created variant");
+    return created;
+  },
+  async update(input) {
+    const db = getDb();
+    const updateValues = { updatedAt: /* @__PURE__ */ new Date() };
+    if (input.name !== void 0) updateValues.name = input.name;
+    if (input.baseUnitId !== void 0)
+      updateValues.baseUnitId = input.baseUnitId;
+    await db.update(variants).set(updateValues).where(eq(variants.id, input.id));
+    const updated = await this.getById(input.id);
+    if (!updated) throw new Error(`Variant ${input.id} not found`);
+    return updated;
+  },
+  async softDelete(id) {
+    const db = getDb();
+    await db.update(variants).set({ deletedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq(variants.id, id));
+  },
+  async restore(id) {
+    const db = getDb();
+    await db.update(variants).set({ deletedAt: null, updatedAt: /* @__PURE__ */ new Date() }).where(eq(variants.id, id));
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (!query.includeDeleted) conditions.push(isNull(variants.deletedAt));
+    if (query.productId)
+      conditions.push(eq(variants.productId, query.productId));
+    if (query.search) conditions.push(like(variants.name, `%${query.search}%`));
+    const [row] = await db.select({ count: sql`count(*)` }).from(variants).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  }
+};
+const createVariantSchema = object({
+  productId: number().int().positive(),
+  name: string().trim().min(1, "Name is required").max(80, "Name is too long"),
+  baseUnitId: number().int().positive()
+});
+const updateVariantSchema = object({
+  id: number().int().positive(),
+  name: string().trim().min(1).max(80).optional(),
+  baseUnitId: number().int().positive().optional()
+});
+const variantListQuerySchema = object({
+  search: string().trim().optional(),
+  productId: number().int().positive().optional(),
+  includeDeleted: boolean().optional().default(false),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerVariantIpc() {
+  require$$3$1.ipcMain.handle("variant:list", async (_e, rawQuery) => {
+    const query = variantListQuerySchema.parse(rawQuery ?? {});
+    return variantService.list(query);
+  });
+  require$$3$1.ipcMain.handle("variant:count", async (_e, rawQuery) => {
+    const query = variantListQuerySchema.pick({ search: true, includeDeleted: true, productId: true }).parse(rawQuery ?? {});
+    return variantService.count(query);
+  });
+  require$$3$1.ipcMain.handle("variant:get", async (_e, id) => {
+    return variantService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("variant:create", async (_e, rawInput) => {
+    const input = createVariantSchema.parse(rawInput);
+    return variantService.create(input);
+  });
+  require$$3$1.ipcMain.handle("variant:update", async (_e, rawInput) => {
+    const input = updateVariantSchema.parse(rawInput);
+    return variantService.update(input);
+  });
+  require$$3$1.ipcMain.handle("variant:delete", async (_e, id) => {
+    await variantService.softDelete(id);
+    return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("variant:restore", async (_e, id) => {
+    await variantService.restore(id);
+    return { ok: true };
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -10775,6 +10940,7 @@ function registerAllIpc() {
   registerCategoryIpc();
   registerUnitIpc();
   registerProductIpc();
+  registerVariantIpc();
 }
 if (started) {
   require$$3$1.app.quit();
