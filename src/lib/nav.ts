@@ -15,6 +15,7 @@ import {
   ArrowRightLeft,
   Layers,
   Truck,
+  ClipboardList,
 } from "lucide-react";
 
 export type NavItem = {
@@ -30,6 +31,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Customers", to: "/customers", icon: Users, mobile: true },
   { label: "Inventory", to: "/inventory", icon: Boxes, mobile: true },
   { label: "Purchases", to: "/purchases", icon: Truck },
+  { label: "Adjustments", to: "/adjustments", icon: ClipboardList },
   { label: "Products", to: "/products", icon: Package },
   { label: "Variants", to: "/variants", icon: Layers },
   { label: "Categories", to: "/categories", icon: Tag },

@@ -44,6 +44,11 @@ import type {
   StockBatch,
 } from "./purchase";
 import type { StockItem, StockListQuery } from "./inventory";
+import type {
+  AdjustmentListQuery,
+  CreateAdjustmentInput,
+  StockAdjustment,
+} from "./adjustment";
 
 export type IpcChannels = {
   "app:ping": {
@@ -161,6 +166,13 @@ export type AppApi = {
       lowStockCount: number;
       outOfStockCount: number;
     }>;
+  };
+  adjustment: {
+    list: (
+      query?: Partial<AdjustmentListQuery>
+    ) => Promise<StockAdjustment[]>;
+    get: (id: number) => Promise<StockAdjustment | null>;
+    create: (input: CreateAdjustmentInput) => Promise<StockAdjustment>;
   };
 };
 

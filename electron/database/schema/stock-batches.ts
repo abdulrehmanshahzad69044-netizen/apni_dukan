@@ -2,13 +2,6 @@ import { sqliteTable, integer, index } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 import { timestamps, money, quantity } from "./_shared";
 
-/**
- * A stock batch = a specific quantity of a variant purchased at a specific
- * purchase price on a specific date.
- *
- * FIFO consumption happens by picking the oldest batch with remaining
- * quantity when a sale occurs (Phase 3).
- */
 export const stockBatches = sqliteTable(
   "stock_batches",
   {
@@ -16,9 +9,8 @@ export const stockBatches = sqliteTable(
     variantId: integer("variant_id")
       .notNull()
       .references(() => variants.id),
-    purchaseId: integer("purchase_id")
-      .notNull()
-      .references(() => purchases.id),
+    // Nullable: positive adjustments create batches without a purchase
+    purchaseId: integer("purchase_id").references(() => purchases.id),
 
     purchasePrice: money("purchase_price").notNull(),
     suggestedRetailPrice: money("suggested_retail_price"),
@@ -33,7 +25,6 @@ export const stockBatches = sqliteTable(
   },
   (t) => ({
     variantIdx: index("stock_batches_variant_idx").on(t.variantId),
-    // Composite index for FIFO queries: oldest-first, per variant
     fifoIdx: index("stock_batches_fifo_idx").on(t.variantId, t.purchaseDate),
   })
 );

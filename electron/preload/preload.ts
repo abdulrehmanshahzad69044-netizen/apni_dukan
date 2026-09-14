@@ -80,6 +80,11 @@ const api: AppApi = {
     listStock: (query) => ipcRenderer.invoke("inventory:listStock", query ?? {}),
     totals: () => ipcRenderer.invoke("inventory:totals"),
   },
+  adjustment: {
+    list: (query) => ipcRenderer.invoke("adjustment:list", query ?? {}),
+    get: (id) => ipcRenderer.invoke("adjustment:get", id),
+    create: (input) => ipcRenderer.invoke("adjustment:create", input),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

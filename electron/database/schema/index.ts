@@ -1,4 +1,4 @@
-// Shared helpers (money, quantity, timestamps, softDelete)
+// Shared helpers
 export * from "./_shared";
 
 // Module schemas
@@ -13,6 +13,7 @@ export * from "./variants";
 export * from "./purchases";
 export * from "./stock-batches";
 export * from "./stock-ledger";
+export * from "./stock-adjustments";
 
 // Phase 3:
 // export * from "./bills";

@@ -7,6 +7,7 @@ import { registerProductIpc } from "./product.ipc";
 import { registerVariantIpc } from "./variant.ipc";
 import { registerPurchaseIpc } from "./purchase.ipc";
 import { registerInventoryIpc } from "./inventory.ipc";
+import { registerAdjustmentIpc } from "./adjustment.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -18,4 +19,5 @@ export function registerAllIpc() {
   registerVariantIpc();
   registerPurchaseIpc();
   registerInventoryIpc();
+  registerAdjustmentIpc();
 }

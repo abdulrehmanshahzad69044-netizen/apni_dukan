@@ -5591,7 +5591,8 @@ const stockBatches = sqliteTable(
   {
     id: integer$1("id").primaryKey({ autoIncrement: true }),
     variantId: integer$1("variant_id").notNull().references(() => variants.id),
-    purchaseId: integer$1("purchase_id").notNull().references(() => purchases.id),
+    // Nullable: positive adjustments create batches without a purchase
+    purchaseId: integer$1("purchase_id").references(() => purchases.id),
     purchasePrice: money("purchase_price").notNull(),
     suggestedRetailPrice: money("suggested_retail_price"),
     suggestedWholesalePrice: money("suggested_wholesale_price"),
@@ -5602,7 +5603,6 @@ const stockBatches = sqliteTable(
   },
   (t) => ({
     variantIdx: index("stock_batches_variant_idx").on(t.variantId),
-    // Composite index for FIFO queries: oldest-first, per variant
     fifoIdx: index("stock_batches_fifo_idx").on(t.variantId, t.purchaseDate)
   })
 );
@@ -5641,6 +5641,39 @@ const purchasesRelations = relations(purchases, ({ one, many }) => ({
   }),
   batches: many(stockBatches)
 }));
+const stockAdjustments = sqliteTable(
+  "stock_adjustments",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    variantId: integer$1("variant_id").notNull().references(() => variants.id),
+    // Signed: negative = write-off, positive = found/returned
+    quantity: quantity("quantity").notNull(),
+    // Cost per unit at adjustment time (paisa). Used for COGS/loss accounting.
+    unitCost: money("unit_cost").notNull(),
+    adjustmentType: text("adjustment_type", {
+      enum: ["damaged", "lost", "correction", "return"]
+    }).notNull(),
+    reason: text("reason"),
+    adjustmentDate: integer$1("adjustment_date", {
+      mode: "timestamp"
+    }).notNull(),
+    ...timestamps
+  },
+  (t) => ({
+    variantIdx: index("stock_adjustments_variant_idx").on(t.variantId),
+    typeIdx: index("stock_adjustments_type_idx").on(t.adjustmentType),
+    dateIdx: index("stock_adjustments_date_idx").on(t.adjustmentDate)
+  })
+);
+const stockAdjustmentsRelations = relations(
+  stockAdjustments,
+  ({ one }) => ({
+    variant: one(variants, {
+      fields: [stockAdjustments.variantId],
+      references: [variants.id]
+    })
+  })
+);
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   categories,
@@ -5656,6 +5689,8 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   purchasesRelations,
   quantity,
   softDelete,
+  stockAdjustments,
+  stockAdjustmentsRelations,
   stockBatches,
   stockBatchesRelations,
   stockLedger,
@@ -5749,7 +5784,7 @@ function registerAppIpc() {
     }
   );
 }
-function toDto$4(row) {
+function toDto$5(row) {
   return {
     id: row.id,
     name: row.name,
@@ -5778,12 +5813,12 @@ const customerService = {
       );
     }
     const rows = await db.select().from(customers).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(customers.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$4);
+    return rows.map(toDto$5);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
-    return rows[0] ? toDto$4(rows[0]) : null;
+    return rows[0] ? toDto$5(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -5792,7 +5827,7 @@ const customerService = {
       contactNumber: input.contactNumber ?? null,
       address: input.address ?? null
     }).returning();
-    return toDto$4(row);
+    return toDto$5(row);
   },
   async update(input) {
     const db = getDb();
@@ -5807,7 +5842,7 @@ const customerService = {
       updateValues.address = patch.address ?? null;
     const [row] = await db.update(customers).set(updateValues).where(eq(customers.id, id)).returning();
     if (!row) throw new Error(`Customer ${id} not found`);
-    return toDto$4(row);
+    return toDto$5(row);
   },
   /**
    * Soft delete. Never physically removes.
@@ -10334,7 +10369,7 @@ function registerCustomerIpc() {
     return { ok: true };
   });
 }
-function toDto$3(row) {
+function toDto$4(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10358,12 +10393,12 @@ const companyService = {
       );
     }
     const rows = await db.select().from(companies).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(companies.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$3);
+    return rows.map(toDto$4);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
-    return rows[0] ? toDto$3(rows[0]) : null;
+    return rows[0] ? toDto$4(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -10371,7 +10406,7 @@ const companyService = {
       name: input.name,
       contactNumber: input.contactNumber ?? null
     }).returning();
-    return toDto$3(row);
+    return toDto$4(row);
   },
   async update(input) {
     const db = getDb();
@@ -10382,7 +10417,7 @@ const companyService = {
       updateValues.contactNumber = patch.contactNumber ?? null;
     const [row] = await db.update(companies).set(updateValues).where(eq(companies.id, id)).returning();
     if (!row) throw new Error(`Company ${id} not found`);
-    return toDto$3(row);
+    return toDto$4(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -10448,7 +10483,7 @@ function registerCompanyIpc() {
     return { ok: true };
   });
 }
-function toDto$2(row) {
+function toDto$3(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10477,18 +10512,18 @@ const categoryService = {
       conditions.push(like(categories.name, `%${query.search}%`));
     }
     const rows = await db.select().from(categories).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(categories.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$2);
+    return rows.map(toDto$3);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
-    return rows[0] ? toDto$2(rows[0]) : null;
+    return rows[0] ? toDto$3(rows[0]) : null;
   },
   async create(input) {
     await assertNameAvailable(input.name);
     const db = getDb();
     const [row] = await db.insert(categories).values({ name: input.name }).returning();
-    return toDto$2(row);
+    return toDto$3(row);
   },
   async update(input) {
     if (input.name !== void 0) {
@@ -10499,7 +10534,7 @@ const categoryService = {
     if (input.name !== void 0) updateValues.name = input.name;
     const [row] = await db.update(categories).set(updateValues).where(eq(categories.id, input.id)).returning();
     if (!row) throw new Error(`Category ${input.id} not found`);
-    return toDto$2(row);
+    return toDto$3(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -10804,7 +10839,7 @@ function registerUnitIpc() {
     return { ok: true };
   });
 }
-function toDto$1(row) {
+function toDto$2(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10846,12 +10881,12 @@ const productService = {
       conditions.push(eq(products.companyId, query.companyId));
     }
     const rows = await baseJoin$1(db.select(productSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(products.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$1);
+    return rows.map(toDto$2);
   },
   async getById(id) {
     const db = getDb();
     const rows = await baseJoin$1(db.select(productSelect)).where(eq(products.id, id)).limit(1);
-    return rows[0] ? toDto$1(rows[0]) : null;
+    return rows[0] ? toDto$2(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -10946,7 +10981,7 @@ function registerProductIpc() {
     return { ok: true };
   });
 }
-function toDto(row) {
+function toDto$1(row) {
   return {
     id: row.id,
     productId: row.productId,
@@ -10993,12 +11028,12 @@ const variantService = {
       );
     }
     const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(variants.productId), asc(variants.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto);
+    return rows.map(toDto$1);
   },
   async getById(id) {
     const db = getDb();
     const rows = await baseJoin(db.select(variantSelect)).where(eq(variants.id, id)).limit(1);
-    return rows[0] ? toDto(rows[0]) : null;
+    return rows[0] ? toDto$1(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -11485,6 +11520,235 @@ function registerInventoryIpc() {
     return inventoryService.totals();
   });
 }
+function toDto(row) {
+  return {
+    id: row.id,
+    variantId: row.variantId,
+    productName: row.productName,
+    variantName: row.variantName,
+    baseUnitShortName: row.baseUnitShortName,
+    quantity: row.quantity,
+    unitCost: row.unitCost,
+    adjustmentType: row.adjustmentType,
+    reason: row.reason,
+    adjustmentDate: Math.floor(row.adjustmentDate.getTime() / 1e3),
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3)
+  };
+}
+function resolveSignedQuantity(input) {
+  const absQty = input.quantity;
+  switch (input.adjustmentType) {
+    case "damaged":
+    case "lost":
+      return -absQty;
+    case "return":
+      return absQty;
+    case "correction":
+      if (!input.sign) {
+        throw new Error("Sign is required for correction type");
+      }
+      return input.sign === "negative" ? -absQty : absQty;
+    default:
+      throw new Error(`Unknown adjustment type: ${input.adjustmentType}`);
+  }
+}
+const adjustmentService = {
+  async create(input) {
+    const db = getDb();
+    const signedQty = resolveSignedQuantity(input);
+    const insertedId = db.transaction((tx) => {
+      const [costRow] = tx.select({
+        avgCost: sql`
+            CAST(
+              COALESCE(
+                SUM(${stockBatches.remainingQuantity} * ${stockBatches.purchasePrice})
+                  / NULLIF(SUM(${stockBatches.remainingQuantity}), 0),
+                0
+              ) AS INTEGER
+            )
+          `
+      }).from(stockBatches).where(
+        and(
+          eq(stockBatches.variantId, input.variantId),
+          sql`${stockBatches.remainingQuantity} > 0`
+        )
+      ).all();
+      const unitCost = Math.round(costRow?.avgCost ?? 0);
+      const [adj] = tx.insert(stockAdjustments).values({
+        variantId: input.variantId,
+        quantity: signedQty,
+        unitCost,
+        adjustmentType: input.adjustmentType,
+        reason: input.reason ?? null,
+        adjustmentDate: /* @__PURE__ */ new Date()
+      }).returning({ id: stockAdjustments.id }).all();
+      if (signedQty < 0) {
+        let remaining = -signedQty;
+        const batches = tx.select().from(stockBatches).where(
+          and(
+            eq(stockBatches.variantId, input.variantId),
+            sql`${stockBatches.remainingQuantity} > 0`
+          )
+        ).orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id)).all();
+        const totalAvailable = batches.reduce(
+          (sum, b) => sum + b.remainingQuantity,
+          0
+        );
+        if (totalAvailable < remaining) {
+          throw new Error(
+            `Not enough stock. Available: ${(totalAvailable / 1e3).toFixed(3)}, requested: ${(remaining / 1e3).toFixed(3)}`
+          );
+        }
+        for (const batch of batches) {
+          if (remaining <= 0) break;
+          const consume = Math.min(remaining, batch.remainingQuantity);
+          remaining -= consume;
+          tx.update(stockBatches).set({ remainingQuantity: batch.remainingQuantity - consume }).where(eq(stockBatches.id, batch.id)).run();
+          tx.insert(stockLedger).values({
+            batchId: batch.id,
+            variantId: input.variantId,
+            quantityChange: -consume,
+            unitCost: batch.purchasePrice,
+            movementType: input.adjustmentType === "damaged" ? "damage" : "adjustment",
+            referenceType: "adjustment",
+            referenceId: adj.id,
+            notes: input.reason ?? null
+          }).run();
+        }
+      } else if (signedQty > 0) {
+        const [batch] = tx.insert(stockBatches).values({
+          variantId: input.variantId,
+          purchaseId: null,
+          purchasePrice: unitCost,
+          suggestedRetailPrice: null,
+          suggestedWholesalePrice: null,
+          quantityPurchased: signedQty,
+          remainingQuantity: signedQty,
+          purchaseDate: /* @__PURE__ */ new Date()
+        }).returning({ id: stockBatches.id }).all();
+        tx.insert(stockLedger).values({
+          batchId: batch.id,
+          variantId: input.variantId,
+          quantityChange: signedQty,
+          unitCost,
+          movementType: "adjustment",
+          referenceType: "adjustment",
+          referenceId: adj.id,
+          notes: input.reason ?? null
+        }).run();
+      }
+      return adj.id;
+    });
+    const created = await this.getById(insertedId);
+    if (!created) throw new Error("Failed to load created adjustment");
+    return created;
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select({
+      id: stockAdjustments.id,
+      variantId: stockAdjustments.variantId,
+      quantity: stockAdjustments.quantity,
+      unitCost: stockAdjustments.unitCost,
+      adjustmentType: stockAdjustments.adjustmentType,
+      reason: stockAdjustments.reason,
+      adjustmentDate: stockAdjustments.adjustmentDate,
+      createdAt: stockAdjustments.createdAt,
+      productName: sql`p.name`,
+      variantName: sql`v.name`,
+      baseUnitShortName: sql`u.short_name`
+    }).from(stockAdjustments).innerJoin(sql`variants v`, sql`v.id = ${stockAdjustments.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).where(eq(stockAdjustments.id, id)).limit(1);
+    return rows[0] ? toDto(rows[0]) : null;
+  },
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.variantId) {
+      conditions.push(eq(stockAdjustments.variantId, query.variantId));
+    }
+    if (query.adjustmentType) {
+      conditions.push(
+        eq(stockAdjustments.adjustmentType, query.adjustmentType)
+      );
+    }
+    if (query.fromDate) {
+      conditions.push(gte(stockAdjustments.adjustmentDate, query.fromDate));
+    }
+    if (query.toDate) {
+      conditions.push(lte(stockAdjustments.adjustmentDate, query.toDate));
+    }
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(or(sql`p.name LIKE ${term}`, sql`v.name LIKE ${term}`));
+    }
+    const rows = await db.select({
+      id: stockAdjustments.id,
+      variantId: stockAdjustments.variantId,
+      quantity: stockAdjustments.quantity,
+      unitCost: stockAdjustments.unitCost,
+      adjustmentType: stockAdjustments.adjustmentType,
+      reason: stockAdjustments.reason,
+      adjustmentDate: stockAdjustments.adjustmentDate,
+      createdAt: stockAdjustments.createdAt,
+      productName: sql`p.name`,
+      variantName: sql`v.name`,
+      baseUnitShortName: sql`u.short_name`
+    }).from(stockAdjustments).innerJoin(sql`variants v`, sql`v.id = ${stockAdjustments.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(
+      desc(stockAdjustments.adjustmentDate),
+      desc(stockAdjustments.id)
+    ).limit(query.limit).offset(query.offset);
+    return rows.map(toDto);
+  },
+  /**
+   * Count adjustments for a variant — useful for showing "N adjustments" on
+   * a variant row.
+   */
+  async countByVariant(variantId) {
+    const db = getDb();
+    const [row] = await db.select({ count: sql`count(*)` }).from(stockAdjustments).where(eq(stockAdjustments.variantId, variantId));
+    return row?.count ?? 0;
+  }
+};
+const ADJUSTMENT_TYPES = [
+  "damaged",
+  "lost",
+  "correction",
+  "return"
+];
+const createAdjustmentSchema = object({
+  variantId: number().int().positive(),
+  quantity: number().int().positive("Quantity must be positive"),
+  adjustmentType: _enum(ADJUSTMENT_TYPES),
+  /**
+   * For "correction": positive = found, negative = missing.
+   * For "damaged" / "lost": always negative (write-off).
+   * For "return": always positive.
+   */
+  sign: _enum(["positive", "negative"]).optional(),
+  reason: string().trim().max(500).optional().or(literal("")).transform((v) => v === "" ? void 0 : v)
+});
+const adjustmentListQuerySchema = object({
+  variantId: number().int().positive().optional(),
+  adjustmentType: _enum(ADJUSTMENT_TYPES).optional(),
+  search: string().trim().optional(),
+  fromDate: date().optional(),
+  toDate: date().optional(),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerAdjustmentIpc() {
+  require$$3$1.ipcMain.handle("adjustment:list", async (_e, rawQuery) => {
+    const query = adjustmentListQuerySchema.parse(rawQuery ?? {});
+    return adjustmentService.list(query);
+  });
+  require$$3$1.ipcMain.handle("adjustment:get", async (_e, id) => {
+    return adjustmentService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("adjustment:create", async (_e, rawInput) => {
+    const input = createAdjustmentSchema.parse(rawInput);
+    return adjustmentService.create(input);
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -11495,6 +11759,7 @@ function registerAllIpc() {
   registerVariantIpc();
   registerPurchaseIpc();
   registerInventoryIpc();
+  registerAdjustmentIpc();
 }
 if (started) {
   require$$3$1.app.quit();

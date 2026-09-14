@@ -76,6 +76,11 @@ const api = {
   inventory: {
     listStock: (query) => electron.ipcRenderer.invoke("inventory:listStock", query ?? {}),
     totals: () => electron.ipcRenderer.invoke("inventory:totals")
+  },
+  adjustment: {
+    list: (query) => electron.ipcRenderer.invoke("adjustment:list", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("adjustment:get", id),
+    create: (input) => electron.ipcRenderer.invoke("adjustment:create", input)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);
