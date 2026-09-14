@@ -43,6 +43,7 @@ import type {
   PurchaseListQuery,
   StockBatch,
 } from "./purchase";
+import type { StockItem, StockListQuery } from "./inventory";
 
 export type IpcChannels = {
   "app:ping": {
@@ -139,7 +140,7 @@ export type AppApi = {
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };
-    purchase: {
+  purchase: {
     list: (query?: Partial<PurchaseListQuery>) => Promise<Purchase[]>;
     count: (
       query?: Pick<PurchaseListQuery, "companyId" | "fromDate" | "toDate">
@@ -151,6 +152,15 @@ export type AppApi = {
       id: number;
       paidAmount: number;
     }) => Promise<Purchase>;
+  };
+  inventory: {
+    listStock: (query?: Partial<StockListQuery>) => Promise<StockItem[]>;
+    totals: () => Promise<{
+      totalVariants: number;
+      totalStockValue: number;
+      lowStockCount: number;
+      outOfStockCount: number;
+    }>;
   };
 };
 

@@ -11,6 +11,7 @@ import { VariantsPage } from "@/features/variants/VariantsPage";
 import { PurchasesPage } from "@/features/purchases/PurchasesPage";
 import { PurchaseDetailPage } from "@/features/purchases/PurchaseDetailPage";
 import { PurchaseEntryPage } from "@/features/purchases/PurchaseEntryPage";
+import { StockPage } from "@/features/inventory/StockPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -29,7 +30,7 @@ export function AppRouter() {
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="purchases/new" element={<PurchaseEntryPage />} />
         <Route path="purchases/:id" element={<PurchaseDetailPage />} />
-        <Route path="inventory" element={<ComingSoonPage title="Inventory" />} />
+        <Route path="inventory" element={<StockPage />} />
         <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />
         <Route path="payments" element={<ComingSoonPage title="Payments" />} />
         <Route path="expenses" element={<ComingSoonPage title="Expenses" />} />

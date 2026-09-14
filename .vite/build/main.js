@@ -11321,6 +11321,170 @@ function registerPurchaseIpc() {
     return purchaseService.setPaidAmount(input.id, input.paidAmount);
   });
 }
+const inventoryService = {
+  async listStock(query) {
+    const db = getDb();
+    const conditions = [sql`b.remaining_quantity > 0`];
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        sql`(p.name LIKE ${term} OR v.name LIKE ${term})`
+      );
+    }
+    const rows = db.$client.prepare(
+      `
+        SELECT
+          b.variant_id                              AS variantId,
+          v.product_id                              AS productId,
+          p.name                                    AS productName,
+          v.name                                    AS variantName,
+          v.base_unit_id                            AS baseUnitId,
+          u.name                                    AS baseUnitName,
+          u.short_name                              AS baseUnitShortName,
+          SUM(b.remaining_quantity)                 AS currentStock,
+          SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
+          COUNT(*)                                  AS activeBatchCount,
+          MAX(b.purchase_date)                      AS lastPurchaseDate
+        FROM stock_batches b
+        INNER JOIN variants  v ON v.id = b.variant_id
+        INNER JOIN products  p ON p.id = v.product_id
+        INNER JOIN units     u ON u.id = v.base_unit_id
+        WHERE ${conditions.map(() => "1=1").join(" AND ")}
+          AND b.remaining_quantity > 0
+          ${query.search ? "AND (p.name LIKE @search OR v.name LIKE @search)" : ""}
+        GROUP BY b.variant_id
+        `
+    ).all(
+      query.search ? { search: `%${query.search}%` } : {}
+    );
+    const variantIds = rows.map((r) => r.variantId);
+    const latestPrices = /* @__PURE__ */ new Map();
+    if (variantIds.length > 0) {
+      const placeholders = variantIds.map(() => "?").join(",");
+      const priceRows = db.$client.prepare(
+        `
+          SELECT b1.variant_id, b1.suggested_retail_price AS retail,
+                 b1.suggested_wholesale_price AS wholesale
+          FROM stock_batches b1
+          INNER JOIN (
+            SELECT variant_id, MAX(purchase_date) AS max_date
+            FROM stock_batches
+            WHERE variant_id IN (${placeholders})
+            GROUP BY variant_id
+          ) b2 ON b2.variant_id = b1.variant_id AND b2.max_date = b1.purchase_date
+          GROUP BY b1.variant_id
+          `
+      ).all(...variantIds);
+      for (const pr of priceRows) {
+        latestPrices.set(pr.variant_id, {
+          retail: pr.retail,
+          wholesale: pr.wholesale
+        });
+      }
+    }
+    let items = rows.map((r) => {
+      const currentStock = r.currentStock;
+      const stockValuePaisa = Math.round(r.valueMilliPaisa / 1e3);
+      const avgCost = currentStock > 0 ? Math.round(stockValuePaisa / (currentStock / 1e3)) : 0;
+      const prices = latestPrices.get(r.variantId);
+      return {
+        variantId: r.variantId,
+        productId: r.productId,
+        productName: r.productName,
+        variantName: r.variantName,
+        baseUnitId: r.baseUnitId,
+        baseUnitName: r.baseUnitName,
+        baseUnitShortName: r.baseUnitShortName,
+        currentStock,
+        avgCost,
+        stockValue: stockValuePaisa,
+        latestRetailPrice: prices?.retail ?? null,
+        latestWholesalePrice: prices?.wholesale ?? null,
+        activeBatchCount: r.activeBatchCount,
+        lastPurchaseDate: r.lastPurchaseDate ? Math.floor(r.lastPurchaseDate) : null,
+        lowStockThreshold: null
+        // populated in Phase 2.7
+      };
+    });
+    if (query.filter === "out") {
+      items = items.filter((i) => i.currentStock === 0);
+    } else if (query.filter === "in") {
+      items = items.filter((i) => i.currentStock > 0);
+    } else if (query.filter === "low") {
+      items = items.filter(
+        (i) => i.lowStockThreshold !== null && i.currentStock <= i.lowStockThreshold
+      );
+    }
+    const sort = query.sort ?? "name";
+    items.sort((a, b) => {
+      switch (sort) {
+        case "name":
+          return a.productName.localeCompare(b.productName) || a.variantName.localeCompare(b.variantName);
+        case "stock_asc":
+          return a.currentStock - b.currentStock;
+        case "stock_desc":
+          return b.currentStock - a.currentStock;
+        case "value_asc":
+          return a.stockValue - b.stockValue;
+        case "value_desc":
+          return b.stockValue - a.stockValue;
+        default:
+          return 0;
+      }
+    });
+    return items.slice(query.offset, query.offset + query.limit);
+  },
+  /**
+   * Aggregate inventory totals for dashboard tiles.
+   */
+  async totals() {
+    const db = getDb();
+    const [row] = db.$client.prepare(
+      `
+        SELECT
+          COUNT(DISTINCT variant_id) AS totalVariants,
+          COALESCE(SUM(remaining_quantity * purchase_price) / 1000, 0) AS valuePaisa
+        FROM stock_batches
+        WHERE remaining_quantity > 0
+        `
+    ).all();
+    const [outRow] = db.$client.prepare(
+      `
+        SELECT COUNT(*) AS outCount
+        FROM variants v
+        WHERE NOT EXISTS (
+          SELECT 1 FROM stock_batches b
+          WHERE b.variant_id = v.id AND b.remaining_quantity > 0
+        )
+        AND v.deleted_at IS NULL
+        `
+    ).all();
+    return {
+      totalVariants: row?.totalVariants ?? 0,
+      totalStockValue: Math.round(row?.valuePaisa ?? 0),
+      lowStockCount: 0,
+      // Phase 2.7
+      outOfStockCount: outRow?.outCount ?? 0
+    };
+  }
+};
+const stockListQuerySchema = object({
+  search: string().trim().optional(),
+  /** "all" | "in" | "low" | "out" */
+  filter: _enum(["all", "in", "low", "out"]).optional().default("all"),
+  sort: _enum(["name", "stock_asc", "stock_desc", "value_desc", "value_asc"]).optional().default("name"),
+  limit: number().int().positive().max(1e3).optional().default(500),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerInventoryIpc() {
+  require$$3$1.ipcMain.handle("inventory:listStock", async (_e, rawQuery) => {
+    const query = stockListQuerySchema.parse(rawQuery ?? {});
+    return inventoryService.listStock(query);
+  });
+  require$$3$1.ipcMain.handle("inventory:totals", async () => {
+    return inventoryService.totals();
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -11330,6 +11494,7 @@ function registerAllIpc() {
   registerProductIpc();
   registerVariantIpc();
   registerPurchaseIpc();
+  registerInventoryIpc();
 }
 if (started) {
   require$$3$1.app.quit();

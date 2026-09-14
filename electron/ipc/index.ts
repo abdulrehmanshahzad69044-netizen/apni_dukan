@@ -6,6 +6,7 @@ import { registerUnitIpc } from "./unit.ipc";
 import { registerProductIpc } from "./product.ipc";
 import { registerVariantIpc } from "./variant.ipc";
 import { registerPurchaseIpc } from "./purchase.ipc";
+import { registerInventoryIpc } from "./inventory.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -16,6 +17,5 @@ export function registerAllIpc() {
   registerProductIpc();
   registerVariantIpc();
   registerPurchaseIpc();
-  // Phase 2:
-  // registerInventoryIpc();
+  registerInventoryIpc();
 }

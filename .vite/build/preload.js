@@ -72,6 +72,10 @@ const api = {
     getBatches: (purchaseId) => electron.ipcRenderer.invoke("purchase:getBatches", purchaseId),
     create: (input) => electron.ipcRenderer.invoke("purchase:create", input),
     setPaidAmount: (input) => electron.ipcRenderer.invoke("purchase:setPaidAmount", input)
+  },
+  inventory: {
+    listStock: (query) => electron.ipcRenderer.invoke("inventory:listStock", query ?? {}),
+    totals: () => electron.ipcRenderer.invoke("inventory:totals")
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);
