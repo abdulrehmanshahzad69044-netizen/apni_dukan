@@ -31,4 +31,8 @@ export const purchaseApi = {
   async create(input: CreatePurchaseInput): Promise<Purchase> {
     return window.api.purchase.create(input);
   },
+
+  async setPaidAmount(id: number, paidAmount: number): Promise<Purchase> {
+    return window.api.purchase.setPaidAmount({ id, paidAmount });
+  },
 };

@@ -139,7 +139,7 @@ export type AppApi = {
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };
-  purchase: {
+    purchase: {
     list: (query?: Partial<PurchaseListQuery>) => Promise<Purchase[]>;
     count: (
       query?: Pick<PurchaseListQuery, "companyId" | "fromDate" | "toDate">
@@ -147,6 +147,10 @@ export type AppApi = {
     get: (id: number) => Promise<Purchase | null>;
     getBatches: (purchaseId: number) => Promise<StockBatch[]>;
     create: (input: CreatePurchaseInput) => Promise<Purchase>;
+    setPaidAmount: (input: {
+      id: number;
+      paidAmount: number;
+    }) => Promise<Purchase>;
   };
 };
 

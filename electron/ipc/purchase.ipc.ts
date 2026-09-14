@@ -1,9 +1,15 @@
 import { ipcMain } from "electron";
+import { z } from "zod";
 import { purchaseService } from "../services/purchase.service";
 import {
   createPurchaseSchema,
   purchaseListQuerySchema,
 } from "../shared/types/purchase";
+
+const setPaidAmountSchema = z.object({
+  id: z.number().int().positive(),
+  paidAmount: z.number().int().nonnegative(),
+});
 
 export function registerPurchaseIpc() {
   ipcMain.handle("purchase:list", async (_e, rawQuery: unknown) => {
@@ -29,5 +35,10 @@ export function registerPurchaseIpc() {
   ipcMain.handle("purchase:create", async (_e, rawInput: unknown) => {
     const input = createPurchaseSchema.parse(rawInput);
     return purchaseService.create(input);
+  });
+
+  ipcMain.handle("purchase:setPaidAmount", async (_e, rawInput: unknown) => {
+    const input = setPaidAmountSchema.parse(rawInput);
+    return purchaseService.setPaidAmount(input.id, input.paidAmount);
   });
 }

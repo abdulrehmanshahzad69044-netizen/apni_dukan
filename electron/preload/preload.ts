@@ -66,13 +66,15 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("variant:delete", id),
     restore: (id) => ipcRenderer.invoke("variant:restore", id),
   },
-  purchase: {
+    purchase: {
     list: (query) => ipcRenderer.invoke("purchase:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("purchase:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("purchase:get", id),
     getBatches: (purchaseId) =>
       ipcRenderer.invoke("purchase:getBatches", purchaseId),
     create: (input) => ipcRenderer.invoke("purchase:create", input),
+    setPaidAmount: (input) =>
+      ipcRenderer.invoke("purchase:setPaidAmount", input),
   },
 };
 

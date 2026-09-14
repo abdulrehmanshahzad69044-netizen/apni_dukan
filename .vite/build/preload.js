@@ -70,7 +70,8 @@ const api = {
     count: (query) => electron.ipcRenderer.invoke("purchase:count", query ?? {}),
     get: (id) => electron.ipcRenderer.invoke("purchase:get", id),
     getBatches: (purchaseId) => electron.ipcRenderer.invoke("purchase:getBatches", purchaseId),
-    create: (input) => electron.ipcRenderer.invoke("purchase:create", input)
+    create: (input) => electron.ipcRenderer.invoke("purchase:create", input),
+    setPaidAmount: (input) => electron.ipcRenderer.invoke("purchase:setPaidAmount", input)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

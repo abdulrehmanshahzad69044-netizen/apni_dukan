@@ -10985,7 +10985,12 @@ const variantService = {
     }
     if (query.search) {
       const term = `%${query.search}%`;
-      conditions.push(like(variants.name, term));
+      conditions.push(
+        or(
+          like(variants.name, term),
+          like(sql`p.name`, term)
+        )
+      );
     }
     const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(variants.productId), asc(variants.name)).limit(query.limit).offset(query.offset);
     return rows.map(toDto);
@@ -11031,8 +11036,13 @@ const variantService = {
     if (!query.includeDeleted) conditions.push(isNull(variants.deletedAt));
     if (query.productId)
       conditions.push(eq(variants.productId, query.productId));
-    if (query.search) conditions.push(like(variants.name, `%${query.search}%`));
-    const [row] = await db.select({ count: sql`count(*)` }).from(variants).where(conditions.length > 0 ? and(...conditions) : void 0);
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(like(variants.name, term), like(sql`p.name`, term))
+      );
+    }
+    const [row] = await db.select({ count: sql`count(*)` }).from(variants).innerJoin(sql`products AS p`, sql`p.id = ${variants.productId}`).where(conditions.length > 0 ? and(...conditions) : void 0);
     return row?.count ?? 0;
   }
 };
@@ -11106,14 +11116,10 @@ async function generatePurchaseNumber() {
   return `${prefix}${next}`;
 }
 const purchaseService = {
-  /**
-   * Create a purchase + batches + ledger entries in ONE transaction.
-   * If any step fails, nothing is written.
-   */
   async create(input) {
     const db = getDb();
     const totalAmount = input.lines.reduce(
-      (sum, line) => sum + line.quantity * line.purchasePrice,
+      (sum, line) => sum + Math.round(line.quantity * line.purchasePrice / 1e3),
       0
     );
     const purchaseDate = input.purchaseDate ?? /* @__PURE__ */ new Date();
@@ -11142,7 +11148,6 @@ const purchaseService = {
           batchId: batch.id,
           variantId: line.variantId,
           quantityChange: line.quantity,
-          // positive = stock in
           unitCost: line.purchasePrice,
           movementType: "purchase",
           referenceType: "purchase",
@@ -11171,10 +11176,7 @@ const purchaseService = {
     if (query.search) {
       const term = `%${query.search}%`;
       conditions.push(
-        or(
-          like(purchases.purchaseNumber, term),
-          like(sql`c.name`, term)
-        )
+        or(like(purchases.purchaseNumber, term), like(sql`c.name`, term))
       );
     }
     const rows = await db.select({
@@ -11207,9 +11209,6 @@ const purchaseService = {
     }).from(purchases).innerJoin(sql`companies AS c`, sql`c.id = ${purchases.companyId}`).where(eq(purchases.id, id)).limit(1);
     return rows[0] ? toPurchaseDto(rows[0]) : null;
   },
-  /**
-   * Get all batches created by a specific purchase.
-   */
   async getBatches(purchaseId) {
     const db = getDb();
     const rows = await db.select({
@@ -11259,12 +11258,16 @@ const purchaseService = {
     return row?.count ?? 0;
   },
   /**
-   * Update paid amount (used for company payments later).
-   * Not a full CRUD update — purchases are immutable documents.
+   * Update the paid amount on a purchase.
+   * Used by the "Record Payment" feature until Phase 5 (Company Payments)
+   * is built, at which point this becomes a proxy for a company_payment row.
    */
   async setPaidAmount(id, paidAmount) {
     const db = getDb();
     await db.update(purchases).set({ paidAmount, updatedAt: /* @__PURE__ */ new Date() }).where(eq(purchases.id, id));
+    const updated = await this.getById(id);
+    if (!updated) throw new Error(`Purchase ${id} not found`);
+    return updated;
   }
 };
 const purchaseLineSchema = object({
@@ -11290,6 +11293,10 @@ const purchaseListQuerySchema = object({
   limit: number().int().positive().max(500).optional().default(100),
   offset: number().int().nonnegative().optional().default(0)
 });
+const setPaidAmountSchema = object({
+  id: number().int().positive(),
+  paidAmount: number().int().nonnegative()
+});
 function registerPurchaseIpc() {
   require$$3$1.ipcMain.handle("purchase:list", async (_e, rawQuery) => {
     const query = purchaseListQuerySchema.parse(rawQuery ?? {});
@@ -11308,6 +11315,10 @@ function registerPurchaseIpc() {
   require$$3$1.ipcMain.handle("purchase:create", async (_e, rawInput) => {
     const input = createPurchaseSchema.parse(rawInput);
     return purchaseService.create(input);
+  });
+  require$$3$1.ipcMain.handle("purchase:setPaidAmount", async (_e, rawInput) => {
+    const input = setPaidAmountSchema.parse(rawInput);
+    return purchaseService.setPaidAmount(input.id, input.paidAmount);
   });
 }
 function registerAllIpc() {

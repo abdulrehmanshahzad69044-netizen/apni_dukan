@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, like, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, like, or, sql } from "drizzle-orm";
 import { getDb } from "../database/client";
 import { variants } from "../database/schema";
 import type {
@@ -64,7 +64,13 @@ export const variantService = {
     }
     if (query.search) {
       const term = `%${query.search}%`;
-      conditions.push(like(variants.name, term));
+      // Search BOTH variant name AND product name
+      conditions.push(
+        or(
+          like(variants.name, term),
+          like(sql`p.name`, term)
+        )
+      );
     }
 
     const rows = await baseJoin(db.select(variantSelect))
@@ -141,11 +147,18 @@ export const variantService = {
     if (!query.includeDeleted) conditions.push(isNull(variants.deletedAt));
     if (query.productId)
       conditions.push(eq(variants.productId, query.productId));
-    if (query.search) conditions.push(like(variants.name, `%${query.search}%`));
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(like(variants.name, term), like(sql`p.name`, term))
+      );
+    }
 
+    // Note: count needs the join too, to filter by p.name
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
       .from(variants)
+      .innerJoin(sql`products AS p`, sql`p.id = ${variants.productId}`)
       .where(conditions.length > 0 ? and(...conditions) : undefined);
     return row?.count ?? 0;
   },
