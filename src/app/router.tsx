@@ -15,6 +15,7 @@ import { StockPage } from "@/features/inventory/StockPage";
 import { AdjustmentsPage } from "@/features/adjustments/AdjustmentsPage";
 import { BillsPage } from "@/features/bills/BillsPage";
 import { BillDetailPage } from "@/features/bills/BillDetailPage";
+import { BillEntryPage } from "@/features/bills/BillEntryPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -25,10 +26,7 @@ export function AppRouter() {
 
         {/* Billing */}
         <Route path="billing" element={<BillsPage />} />
-        <Route
-          path="billing/new"
-          element={<ComingSoonPage title="New Bill (Phase 3.3)" />}
-        />
+        <Route path="billing/new" element={<BillEntryPage />} />
         <Route path="billing/:id" element={<BillDetailPage />} />
 
         {/* Master data */}
@@ -47,7 +45,7 @@ export function AppRouter() {
         <Route path="inventory" element={<StockPage />} />
         <Route path="adjustments" element={<AdjustmentsPage />} />
 
-        {/* Placeholders for later phases */}
+        {/* Later phases */}
         <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />
         <Route path="payments" element={<ComingSoonPage title="Payments" />} />
         <Route path="expenses" element={<ComingSoonPage title="Expenses" />} />
