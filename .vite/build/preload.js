@@ -75,7 +75,8 @@ const api = {
   },
   inventory: {
     listStock: (query) => electron.ipcRenderer.invoke("inventory:listStock", query ?? {}),
-    totals: () => electron.ipcRenderer.invoke("inventory:totals")
+    totals: () => electron.ipcRenderer.invoke("inventory:totals"),
+    priceHistory: (query) => electron.ipcRenderer.invoke("inventory:priceHistory", query)
   },
   adjustment: {
     list: (query) => electron.ipcRenderer.invoke("adjustment:list", query ?? {}),

@@ -1,8 +1,5 @@
 import { z } from "zod";
 
-/**
- * Aggregated stock info for one variant — summed across all its batches.
- */
 export type StockItem = {
   variantId: number;
   productId: number;
@@ -12,28 +9,18 @@ export type StockItem = {
   baseUnitName: string;
   baseUnitShortName: string;
 
-  /** Total remaining quantity across all non-exhausted batches (milli-units) */
   currentStock: number;
-  /** Weighted average purchase price per unit (paisa) */
   avgCost: number;
-  /** Stock value = currentStock × avgCost (in paisa) */
   stockValue: number;
-  /** Suggested retail price from the most recent batch (paisa, nullable) */
   latestRetailPrice: number | null;
-  /** Suggested wholesale price from the most recent batch (paisa, nullable) */
   latestWholesalePrice: number | null;
-  /** Number of active batches (batches with remainingQuantity > 0) */
   activeBatchCount: number;
-  /** Date of the most recent purchase for this variant (unix seconds) */
   lastPurchaseDate: number | null;
-
-  /** Optional low-stock threshold (milli-units). null = no threshold set */
   lowStockThreshold: number | null;
 };
 
 export const stockListQuerySchema = z.object({
   search: z.string().trim().optional(),
-  /** "all" | "in" | "low" | "out" */
   filter: z.enum(["all", "in", "low", "out"]).optional().default("all"),
   sort: z
     .enum(["name", "stock_asc", "stock_desc", "value_desc", "value_asc"])
@@ -44,3 +31,25 @@ export const stockListQuerySchema = z.object({
 });
 
 export type StockListQuery = z.infer<typeof stockListQuerySchema>;
+
+/**
+ * One row in a variant's price history — one purchase batch.
+ */
+export type PriceHistoryEntry = {
+  batchId: number;
+  purchaseId: number | null;
+  purchaseNumber: string | null;
+  companyName: string | null;
+  purchaseDate: number; // unix seconds
+  purchasePrice: number; // paisa
+  quantityPurchased: number; // milli-units
+  remainingQuantity: number; // milli-units
+  suggestedRetailPrice: number | null;
+  suggestedWholesalePrice: number | null;
+};
+
+export const priceHistoryQuerySchema = z.object({
+  variantId: z.number().int().positive(),
+});
+
+export type PriceHistoryQuery = z.infer<typeof priceHistoryQuerySchema>;

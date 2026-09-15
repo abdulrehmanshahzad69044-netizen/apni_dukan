@@ -1,6 +1,9 @@
 import { ipcMain } from "electron";
 import { inventoryService } from "../services/inventory.service";
-import { stockListQuerySchema } from "../shared/types/inventory";
+import {
+  priceHistoryQuerySchema,
+  stockListQuerySchema,
+} from "../shared/types/inventory";
 
 export function registerInventoryIpc() {
   ipcMain.handle("inventory:listStock", async (_e, rawQuery: unknown) => {
@@ -10,5 +13,10 @@ export function registerInventoryIpc() {
 
   ipcMain.handle("inventory:totals", async () => {
     return inventoryService.totals();
+  });
+
+  ipcMain.handle("inventory:priceHistory", async (_e, rawQuery: unknown) => {
+    const { variantId } = priceHistoryQuerySchema.parse(rawQuery ?? {});
+    return inventoryService.priceHistory(variantId);
   });
 }

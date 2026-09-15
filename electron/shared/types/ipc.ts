@@ -43,7 +43,11 @@ import type {
   PurchaseListQuery,
   StockBatch,
 } from "./purchase";
-import type { StockItem, StockListQuery } from "./inventory";
+import type {
+  PriceHistoryEntry,
+  StockItem,
+  StockListQuery,
+} from "./inventory";
 import type {
   AdjustmentListQuery,
   CreateAdjustmentInput,

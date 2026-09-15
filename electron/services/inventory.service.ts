@@ -1,5 +1,6 @@
 import { getDb } from "../database/client";
 import type {
+  PriceHistoryEntry,
   StockItem,
   StockListQuery,
 } from "../shared/types/inventory";
@@ -12,18 +13,18 @@ export const inventoryService = {
       .prepare(
         `
         SELECT
-          b.variant_id                              AS variantId,
-          v.product_id                              AS productId,
-          p.name                                    AS productName,
-          v.name                                    AS variantName,
-          v.base_unit_id                            AS baseUnitId,
-          u.name                                    AS baseUnitName,
-          u.short_name                              AS baseUnitShortName,
-          v.low_stock_threshold                     AS lowStockThreshold,
-          SUM(b.remaining_quantity)                 AS currentStock,
+          b.variant_id                             AS variantId,
+          v.product_id                             AS productId,
+          p.name                                   AS productName,
+          v.name                                   AS variantName,
+          v.base_unit_id                           AS baseUnitId,
+          u.name                                   AS baseUnitName,
+          u.short_name                             AS baseUnitShortName,
+          v.low_stock_threshold                    AS lowStockThreshold,
+          SUM(b.remaining_quantity)                AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
-          COUNT(*)                                  AS activeBatchCount,
-          MAX(b.purchase_date)                      AS lastPurchaseDate
+          COUNT(*)                                 AS activeBatchCount,
+          MAX(b.purchase_date)                     AS lastPurchaseDate
         FROM stock_batches b
         INNER JOIN variants  v ON v.id = b.variant_id
         INNER JOIN products  p ON p.id = v.product_id
@@ -215,5 +216,59 @@ export const inventoryService = {
       lowStockCount: lowRow?.lowCount ?? 0,
       outOfStockCount: outRow?.outCount ?? 0,
     };
+  },
+
+  /**
+   * All purchase batches for a variant, oldest first.
+   * Used by the price-history modal.
+   */
+  async priceHistory(variantId: number): Promise<PriceHistoryEntry[]> {
+    const db = getDb();
+    const rows = db.$client
+      .prepare(
+        `
+        SELECT
+          b.id                       AS batchId,
+          b.purchase_id              AS purchaseId,
+          pur.purchase_number        AS purchaseNumber,
+          c.name                     AS companyName,
+          b.purchase_date            AS purchaseDate,
+          b.purchase_price           AS purchasePrice,
+          b.quantity_purchased       AS quantityPurchased,
+          b.remaining_quantity       AS remainingQuantity,
+          b.suggested_retail_price   AS suggestedRetailPrice,
+          b.suggested_wholesale_price AS suggestedWholesalePrice
+        FROM stock_batches b
+        LEFT JOIN purchases pur ON pur.id = b.purchase_id
+        LEFT JOIN companies c   ON c.id = pur.company_id
+        WHERE b.variant_id = ?
+        ORDER BY b.purchase_date ASC, b.id ASC
+        `
+      )
+      .all(variantId) as Array<{
+      batchId: number;
+      purchaseId: number | null;
+      purchaseNumber: string | null;
+      companyName: string | null;
+      purchaseDate: number;
+      purchasePrice: number;
+      quantityPurchased: number;
+      remainingQuantity: number;
+      suggestedRetailPrice: number | null;
+      suggestedWholesalePrice: number | null;
+    }>;
+
+    return rows.map((r) => ({
+      batchId: r.batchId,
+      purchaseId: r.purchaseId,
+      purchaseNumber: r.purchaseNumber,
+      companyName: r.companyName,
+      purchaseDate: Math.floor(r.purchaseDate),
+      purchasePrice: r.purchasePrice,
+      quantityPurchased: r.quantityPurchased,
+      remainingQuantity: r.remainingQuantity,
+      suggestedRetailPrice: r.suggestedRetailPrice,
+      suggestedWholesalePrice: r.suggestedWholesalePrice,
+    }));
   },
 };

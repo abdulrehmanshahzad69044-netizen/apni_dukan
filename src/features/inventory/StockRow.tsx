@@ -1,12 +1,14 @@
-import { Package, AlertTriangle } from "lucide-react";
+import { Package, AlertTriangle, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import type { StockItem } from "../../../electron/shared/types/inventory";
 
 type Props = {
   item: StockItem;
+  onShowPriceHistory: () => void;
 };
 
-export function StockRow({ item }: Props) {
+export function StockRow({ item, onShowPriceHistory }: Props) {
   const hasStock = item.currentStock > 0;
   const isLow =
     item.lowStockThreshold !== null &&
@@ -56,7 +58,17 @@ export function StockRow({ item }: Props) {
         </div>
       </div>
 
-      <div className="flex items-center gap-6 shrink-0">
+      <div className="flex items-center gap-4 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onShowPriceHistory}
+          aria-label="Price history"
+          title="Price history"
+        >
+          <TrendingUp className="w-4 h-4" />
+        </Button>
+
         <div className="text-right">
           <p className="text-xs text-[rgb(var(--muted-fg))]">Stock</p>
           <p

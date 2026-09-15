@@ -1,4 +1,5 @@
 import type {
+  PriceHistoryEntry,
   StockItem,
   StockListQuery,
 } from "../../../electron/shared/types/inventory";
@@ -17,5 +18,9 @@ export const inventoryApi = {
     outOfStockCount: number;
   }> {
     return window.api.inventory.totals();
+  },
+
+  async priceHistory(variantId: number): Promise<PriceHistoryEntry[]> {
+    return window.api.inventory.priceHistory({ variantId });
   },
 };
