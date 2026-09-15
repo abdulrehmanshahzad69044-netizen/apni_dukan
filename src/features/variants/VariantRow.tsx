@@ -1,5 +1,6 @@
-import { Package, Pencil, Trash2, Ruler } from "lucide-react";
+import { Package, Pencil, Trash2, Ruler, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { formatQuantity } from "@/lib/format";
 import type { Variant } from "../../../electron/shared/types/variant";
 
 type Props = {
@@ -21,6 +22,12 @@ export function VariantRow({ variant, onEdit, onDelete }: Props) {
           <span className="text-xs px-2 py-0.5 rounded bg-[rgb(var(--muted))] text-[rgb(var(--muted-fg))]">
             {variant.name}
           </span>
+          {variant.lowStockThreshold !== null && (
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-3 h-3" />
+              Low at {formatQuantity(variant.lowStockThreshold)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4 mt-1 text-xs text-[rgb(var(--muted-fg))]">
           <span className="flex items-center gap-1">

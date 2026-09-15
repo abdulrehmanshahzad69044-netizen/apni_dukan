@@ -7,6 +7,10 @@ import { variantApi } from "./api";
 import { useProducts } from "../products/hooks";
 import { useUnits } from "../units/hooks";
 import { toast } from "@/lib/toast";
+import {
+  quantityToMilli,
+  milliToQuantity,
+} from "@/lib/format";
 import type { Variant } from "../../../electron/shared/types/variant";
 
 type Props = {
@@ -14,7 +18,6 @@ type Props = {
   onClose: () => void;
   onSaved: () => void;
   initial?: Variant | null;
-  /** Pre-select this product when creating a new variant (used from Products flow). */
   presetProductId?: number;
 };
 
@@ -30,6 +33,7 @@ export function VariantFormModal({
   const [productId, setProductId] = useState<number | "">("");
   const [name, setName] = useState("");
   const [baseUnitId, setBaseUnitId] = useState<number | "">("");
+  const [threshold, setThreshold] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +45,11 @@ export function VariantFormModal({
       setProductId(initial?.productId ?? presetProductId ?? "");
       setName(initial?.name ?? "");
       setBaseUnitId(initial?.baseUnitId ?? "");
+      setThreshold(
+        initial?.lowStockThreshold != null
+          ? String(milliToQuantity(initial.lowStockThreshold))
+          : ""
+      );
       setError(null);
     }
   }, [open, initial, presetProductId]);
@@ -51,6 +60,16 @@ export function VariantFormModal({
     if (!trimmed) return setError("Name is required");
     if (baseUnitId === "") return setError("Select a base unit");
 
+    // Parse threshold (empty = null)
+    let thresholdMilli: number | null = null;
+    if (threshold.trim() !== "") {
+      const t = Number(threshold);
+      if (!Number.isFinite(t) || t < 0) {
+        return setError("Threshold must be a non-negative number");
+      }
+      thresholdMilli = quantityToMilli(t);
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -59,6 +78,7 @@ export function VariantFormModal({
           id: initial.id,
           name: trimmed,
           baseUnitId: Number(baseUnitId),
+          lowStockThreshold: thresholdMilli,
         });
         toast.success("Variant updated");
       } else {
@@ -66,6 +86,7 @@ export function VariantFormModal({
           productId: Number(productId),
           name: trimmed,
           baseUnitId: Number(baseUnitId),
+          lowStockThreshold: thresholdMilli,
         });
         toast.success("Variant added");
       }
@@ -102,7 +123,6 @@ export function VariantFormModal({
       }
     >
       <div className="space-y-4">
-        {/* Product */}
         <div className="space-y-1.5">
           <Label>Product *</Label>
           <select
@@ -122,7 +142,6 @@ export function VariantFormModal({
           </select>
         </div>
 
-        {/* Variant name */}
         <div className="space-y-1.5">
           <Label htmlFor="variant-name">Variant Name *</Label>
           <Input
@@ -134,13 +153,9 @@ export function VariantFormModal({
               setName(e.target.value);
               if (error) setError(null);
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void handleSave();
-            }}
           />
         </div>
 
-        {/* Base Unit */}
         <div className="space-y-1.5">
           <Label>Base Unit *</Label>
           <select
@@ -157,6 +172,31 @@ export function VariantFormModal({
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="variant-threshold">
+            Low Stock Threshold <span className="text-[rgb(var(--muted-fg))] font-normal">(optional)</span>
+          </Label>
+          <Input
+            id="variant-threshold"
+            type="number"
+            min="0"
+            step="any"
+            placeholder="e.g. 10"
+            value={threshold}
+            onChange={(e) => {
+              setThreshold(e.target.value);
+              if (error) setError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handleSave();
+            }}
+          />
+          <p className="text-xs text-[rgb(var(--muted-fg))]">
+            Alert when stock drops to or below this number. Leave empty for no
+            alert.
+          </p>
         </div>
 
         {error && <p className="text-xs text-red-600">{error}</p>}

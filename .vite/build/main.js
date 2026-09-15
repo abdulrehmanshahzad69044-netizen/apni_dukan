@@ -5528,6 +5528,11 @@ const variants = sqliteTable(
     productId: integer$1("product_id").notNull().references(() => products.id),
     name: text("name").notNull(),
     baseUnitId: integer$1("base_unit_id").notNull().references(() => units.id),
+    /**
+     * Low-stock alert threshold (milli-units).
+     * null = no threshold set (never alerts).
+     */
+    lowStockThreshold: quantity("low_stock_threshold"),
     ...timestamps,
     ...softDelete
   },
@@ -5546,7 +5551,6 @@ const variantsRelations = relations(variants, ({ one, many }) => ({
     fields: [variants.baseUnitId],
     references: [units.id]
   })
-  // batches: many(stockBatches), — added in Phase 2
 }));
 const stockLedger = sqliteTable(
   "stock_ledger",
@@ -10990,6 +10994,7 @@ function toDto$1(row) {
     baseUnitId: row.baseUnitId,
     baseUnitName: row.baseUnitName,
     baseUnitShortName: row.baseUnitShortName,
+    lowStockThreshold: row.lowStockThreshold,
     createdAt: Math.floor(row.createdAt.getTime() / 1e3),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
     deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1e3) : null
@@ -11000,6 +11005,7 @@ const variantSelect = {
   productId: variants.productId,
   name: variants.name,
   baseUnitId: variants.baseUnitId,
+  lowStockThreshold: variants.lowStockThreshold,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
   deletedAt: variants.deletedAt,
@@ -11021,10 +11027,7 @@ const variantService = {
     if (query.search) {
       const term = `%${query.search}%`;
       conditions.push(
-        or(
-          like(variants.name, term),
-          like(sql`p.name`, term)
-        )
+        or(like(variants.name, term), like(sql`p.name`, term))
       );
     }
     const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(variants.productId), asc(variants.name)).limit(query.limit).offset(query.offset);
@@ -11040,7 +11043,8 @@ const variantService = {
     const [inserted] = await db.insert(variants).values({
       productId: input.productId,
       name: input.name,
-      baseUnitId: input.baseUnitId
+      baseUnitId: input.baseUnitId,
+      lowStockThreshold: input.lowStockThreshold ?? null
     }).returning({ id: variants.id });
     const created = await this.getById(inserted.id);
     if (!created) throw new Error("Failed to load created variant");
@@ -11052,6 +11056,8 @@ const variantService = {
     if (input.name !== void 0) updateValues.name = input.name;
     if (input.baseUnitId !== void 0)
       updateValues.baseUnitId = input.baseUnitId;
+    if (input.lowStockThreshold !== void 0)
+      updateValues.lowStockThreshold = input.lowStockThreshold;
     await db.update(variants).set(updateValues).where(eq(variants.id, input.id));
     const updated = await this.getById(input.id);
     if (!updated) throw new Error(`Variant ${input.id} not found`);
@@ -11084,12 +11090,15 @@ const variantService = {
 const createVariantSchema = object({
   productId: number().int().positive(),
   name: string().trim().min(1, "Name is required").max(80, "Name is too long"),
-  baseUnitId: number().int().positive()
+  baseUnitId: number().int().positive(),
+  /** milli-units; null / undefined = no threshold */
+  lowStockThreshold: number().int().nonnegative().nullable().optional()
 });
 const updateVariantSchema = object({
   id: number().int().positive(),
   name: string().trim().min(1).max(80).optional(),
-  baseUnitId: number().int().positive().optional()
+  baseUnitId: number().int().positive().optional(),
+  lowStockThreshold: number().int().nonnegative().nullable().optional()
 });
 const variantListQuerySchema = object({
   search: string().trim().optional(),
@@ -11359,13 +11368,6 @@ function registerPurchaseIpc() {
 const inventoryService = {
   async listStock(query) {
     const db = getDb();
-    const conditions = [sql`b.remaining_quantity > 0`];
-    if (query.search) {
-      const term = `%${query.search}%`;
-      conditions.push(
-        sql`(p.name LIKE ${term} OR v.name LIKE ${term})`
-      );
-    }
     const rows = db.$client.prepare(
       `
         SELECT
@@ -11376,6 +11378,7 @@ const inventoryService = {
           v.base_unit_id                            AS baseUnitId,
           u.name                                    AS baseUnitName,
           u.short_name                              AS baseUnitShortName,
+          v.low_stock_threshold                     AS lowStockThreshold,
           SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
           COUNT(*)                                  AS activeBatchCount,
@@ -11384,21 +11387,20 @@ const inventoryService = {
         INNER JOIN variants  v ON v.id = b.variant_id
         INNER JOIN products  p ON p.id = v.product_id
         INNER JOIN units     u ON u.id = v.base_unit_id
-        WHERE ${conditions.map(() => "1=1").join(" AND ")}
-          AND b.remaining_quantity > 0
+        WHERE b.remaining_quantity > 0
+          AND v.deleted_at IS NULL
           ${query.search ? "AND (p.name LIKE @search OR v.name LIKE @search)" : ""}
         GROUP BY b.variant_id
         `
-    ).all(
-      query.search ? { search: `%${query.search}%` } : {}
-    );
+    ).all(query.search ? { search: `%${query.search}%` } : {});
     const variantIds = rows.map((r) => r.variantId);
     const latestPrices = /* @__PURE__ */ new Map();
     if (variantIds.length > 0) {
       const placeholders = variantIds.map(() => "?").join(",");
       const priceRows = db.$client.prepare(
         `
-          SELECT b1.variant_id, b1.suggested_retail_price AS retail,
+          SELECT b1.variant_id AS variant_id,
+                 b1.suggested_retail_price AS retail,
                  b1.suggested_wholesale_price AS wholesale
           FROM stock_batches b1
           INNER JOIN (
@@ -11437,8 +11439,7 @@ const inventoryService = {
         latestWholesalePrice: prices?.wholesale ?? null,
         activeBatchCount: r.activeBatchCount,
         lastPurchaseDate: r.lastPurchaseDate ? Math.floor(r.lastPurchaseDate) : null,
-        lowStockThreshold: null
-        // populated in Phase 2.7
+        lowStockThreshold: r.lowStockThreshold ?? null
       };
     });
     if (query.filter === "out") {
@@ -11469,9 +11470,6 @@ const inventoryService = {
     });
     return items.slice(query.offset, query.offset + query.limit);
   },
-  /**
-   * Aggregate inventory totals for dashboard tiles.
-   */
   async totals() {
     const db = getDb();
     const [row] = db.$client.prepare(
@@ -11481,6 +11479,20 @@ const inventoryService = {
           COALESCE(SUM(remaining_quantity * purchase_price) / 1000, 0) AS valuePaisa
         FROM stock_batches
         WHERE remaining_quantity > 0
+        `
+    ).all();
+    const [lowRow] = db.$client.prepare(
+      `
+        SELECT COUNT(*) AS lowCount
+        FROM variants v
+        WHERE v.deleted_at IS NULL
+          AND v.low_stock_threshold IS NOT NULL
+          AND COALESCE(
+            (SELECT SUM(b.remaining_quantity)
+             FROM stock_batches b
+             WHERE b.variant_id = v.id AND b.remaining_quantity > 0),
+            0
+          ) <= v.low_stock_threshold
         `
     ).all();
     const [outRow] = db.$client.prepare(
@@ -11497,8 +11509,7 @@ const inventoryService = {
     return {
       totalVariants: row?.totalVariants ?? 0,
       totalStockValue: Math.round(row?.valuePaisa ?? 0),
-      lowStockCount: 0,
-      // Phase 2.7
+      lowStockCount: lowRow?.lowCount ?? 0,
       outOfStockCount: outRow?.outCount ?? 0
     };
   }

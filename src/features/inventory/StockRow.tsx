@@ -1,8 +1,5 @@
-import { Package } from "lucide-react";
-import {
-  formatMoney,
-  formatQuantity,
-} from "@/lib/format";
+import { Package, AlertTriangle } from "lucide-react";
+import { formatMoney, formatQuantity } from "@/lib/format";
 import type { StockItem } from "../../../electron/shared/types/inventory";
 
 type Props = {
@@ -11,6 +8,9 @@ type Props = {
 
 export function StockRow({ item }: Props) {
   const hasStock = item.currentStock > 0;
+  const isLow =
+    item.lowStockThreshold !== null &&
+    item.currentStock <= item.lowStockThreshold;
 
   return (
     <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4">
@@ -29,6 +29,12 @@ export function StockRow({ item }: Props) {
               Out of stock
             </span>
           )}
+          {hasStock && isLow && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-3 h-3" />
+              Low
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4 mt-1 text-xs text-[rgb(var(--muted-fg))]">
           <span>
@@ -44,6 +50,9 @@ export function StockRow({ item }: Props) {
             {item.activeBatchCount} batch
             {item.activeBatchCount !== 1 ? "es" : ""}
           </span>
+          {item.lowStockThreshold !== null && (
+            <span>Threshold: {formatQuantity(item.lowStockThreshold)}</span>
+          )}
         </div>
       </div>
 
@@ -52,7 +61,11 @@ export function StockRow({ item }: Props) {
           <p className="text-xs text-[rgb(var(--muted-fg))]">Stock</p>
           <p
             className={`font-semibold text-lg ${
-              hasStock ? "" : "text-red-600 dark:text-red-400"
+              !hasStock
+                ? "text-red-600 dark:text-red-400"
+                : isLow
+                ? "text-amber-600 dark:text-amber-400"
+                : ""
             }`}
           >
             {formatQuantity(item.currentStock)}

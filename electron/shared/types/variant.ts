@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-/**
- * Variant DTO with denormalized names for the UI.
- * Product name, unit name — so list views don't need extra lookups.
- */
 export type Variant = {
   id: number;
   productId: number;
@@ -12,6 +8,8 @@ export type Variant = {
   baseUnitId: number;
   baseUnitName: string;
   baseUnitShortName: string;
+  /** milli-units; null = no threshold */
+  lowStockThreshold: number | null;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
@@ -25,12 +23,15 @@ export const createVariantSchema = z.object({
     .min(1, "Name is required")
     .max(80, "Name is too long"),
   baseUnitId: z.number().int().positive(),
+  /** milli-units; null / undefined = no threshold */
+  lowStockThreshold: z.number().int().nonnegative().nullable().optional(),
 });
 
 export const updateVariantSchema = z.object({
   id: z.number().int().positive(),
   name: z.string().trim().min(1).max(80).optional(),
   baseUnitId: z.number().int().positive().optional(),
+  lowStockThreshold: z.number().int().nonnegative().nullable().optional(),
 });
 
 export const variantListQuerySchema = z.object({

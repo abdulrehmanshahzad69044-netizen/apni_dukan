@@ -13,6 +13,7 @@ function toDto(row: {
   productId: number;
   name: string;
   baseUnitId: number;
+  lowStockThreshold: number | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -28,6 +29,7 @@ function toDto(row: {
     baseUnitId: row.baseUnitId,
     baseUnitName: row.baseUnitName,
     baseUnitShortName: row.baseUnitShortName,
+    lowStockThreshold: row.lowStockThreshold,
     createdAt: Math.floor(row.createdAt.getTime() / 1000),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1000),
     deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1000) : null,
@@ -39,6 +41,7 @@ const variantSelect = {
   productId: variants.productId,
   name: variants.name,
   baseUnitId: variants.baseUnitId,
+  lowStockThreshold: variants.lowStockThreshold,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
   deletedAt: variants.deletedAt,
@@ -64,12 +67,8 @@ export const variantService = {
     }
     if (query.search) {
       const term = `%${query.search}%`;
-      // Search BOTH variant name AND product name
       conditions.push(
-        or(
-          like(variants.name, term),
-          like(sql`p.name`, term)
-        )
+        or(like(variants.name, term), like(sql`p.name`, term))
       );
     }
 
@@ -98,6 +97,7 @@ export const variantService = {
         productId: input.productId,
         name: input.name,
         baseUnitId: input.baseUnitId,
+        lowStockThreshold: input.lowStockThreshold ?? null,
       })
       .returning({ id: variants.id });
 
@@ -112,6 +112,8 @@ export const variantService = {
     if (input.name !== undefined) updateValues.name = input.name;
     if (input.baseUnitId !== undefined)
       updateValues.baseUnitId = input.baseUnitId;
+    if (input.lowStockThreshold !== undefined)
+      updateValues.lowStockThreshold = input.lowStockThreshold;
 
     await db
       .update(variants)
@@ -154,7 +156,6 @@ export const variantService = {
       );
     }
 
-    // Note: count needs the join too, to filter by p.name
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
       .from(variants)

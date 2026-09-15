@@ -1,6 +1,6 @@
 import { sqliteTable, integer, text, index } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
-import { timestamps, softDelete } from "./_shared";
+import { timestamps, softDelete, quantity } from "./_shared";
 
 export const variants = sqliteTable(
   "variants",
@@ -13,6 +13,11 @@ export const variants = sqliteTable(
     baseUnitId: integer("base_unit_id")
       .notNull()
       .references(() => units.id),
+    /**
+     * Low-stock alert threshold (milli-units).
+     * null = no threshold set (never alerts).
+     */
+    lowStockThreshold: quantity("low_stock_threshold"),
     ...timestamps,
     ...softDelete,
   },
@@ -32,7 +37,6 @@ export const variantsRelations = relations(variants, ({ one, many }) => ({
     fields: [variants.baseUnitId],
     references: [units.id],
   }),
-  // batches: many(stockBatches), — added in Phase 2
 }));
 
 import { products } from "./products";

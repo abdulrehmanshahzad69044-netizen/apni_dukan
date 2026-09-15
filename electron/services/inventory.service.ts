@@ -1,43 +1,13 @@
-import { and, asc, desc, eq, isNull, like, or, sql } from "drizzle-orm";
 import { getDb } from "../database/client";
-import { stockBatches } from "../database/schema";
 import type {
   StockItem,
   StockListQuery,
 } from "../shared/types/inventory";
 
-/**
- * Aggregate all non-exhausted batches per variant into a single stock row.
- *
- * We compute:
- *   currentStock  = SUM(remainingQuantity)
- *   stockValue    = SUM(remainingQuantity × purchasePrice)   [in paisa-milli units]
- *   avgCost       = stockValue / currentStock                [back to paisa]
- *
- * Note on units:
- *   remainingQuantity is milli-units (× 1000)
- *   purchasePrice is paisa (× 100)
- *
- *   Value in paisa: SUM(remaining × price) / 1000
- *   Average cost in paisa: (SUM(remaining × price) / 1000) / (SUM(remaining) / 1000)
- *                        = SUM(remaining × price) / SUM(remaining)
- */
 export const inventoryService = {
   async listStock(query: StockListQuery): Promise<StockItem[]> {
     const db = getDb();
 
-    // Base aggregation across batches
-    // We group by variant_id and join to variant/product/unit for display.
-    const conditions = [sql`b.remaining_quantity > 0`];
-
-    if (query.search) {
-      const term = `%${query.search}%`;
-      conditions.push(
-        sql`(p.name LIKE ${term} OR v.name LIKE ${term})`
-      );
-    }
-
-    // Build aggregation query using raw SQL for clarity
     const rows = db.$client
       .prepare(
         `
@@ -49,6 +19,7 @@ export const inventoryService = {
           v.base_unit_id                            AS baseUnitId,
           u.name                                    AS baseUnitName,
           u.short_name                              AS baseUnitShortName,
+          v.low_stock_threshold                     AS lowStockThreshold,
           SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
           COUNT(*)                                  AS activeBatchCount,
@@ -57,15 +28,13 @@ export const inventoryService = {
         INNER JOIN variants  v ON v.id = b.variant_id
         INNER JOIN products  p ON p.id = v.product_id
         INNER JOIN units     u ON u.id = v.base_unit_id
-        WHERE ${conditions.map(() => "1=1").join(" AND ")}
-          AND b.remaining_quantity > 0
+        WHERE b.remaining_quantity > 0
+          AND v.deleted_at IS NULL
           ${query.search ? "AND (p.name LIKE @search OR v.name LIKE @search)" : ""}
         GROUP BY b.variant_id
         `
       )
-      .all(
-        query.search ? { search: `%${query.search}%` } : {}
-      ) as Array<{
+      .all(query.search ? { search: `%${query.search}%` } : {}) as Array<{
       variantId: number;
       productId: number;
       productName: string;
@@ -73,14 +42,13 @@ export const inventoryService = {
       baseUnitId: number;
       baseUnitName: string;
       baseUnitShortName: string;
+      lowStockThreshold: number | null;
       currentStock: number;
       valueMilliPaisa: number;
       activeBatchCount: number;
       lastPurchaseDate: number | null;
     }>;
 
-    // Fetch the latest batch's suggested prices per variant separately.
-    // (Cleaner than doing it in the aggregate query.)
     const variantIds = rows.map((r) => r.variantId);
     const latestPrices = new Map<
       number,
@@ -92,7 +60,8 @@ export const inventoryService = {
       const priceRows = db.$client
         .prepare(
           `
-          SELECT b1.variant_id, b1.suggested_retail_price AS retail,
+          SELECT b1.variant_id AS variant_id,
+                 b1.suggested_retail_price AS retail,
                  b1.suggested_wholesale_price AS wholesale
           FROM stock_batches b1
           INNER JOIN (
@@ -118,12 +87,13 @@ export const inventoryService = {
       }
     }
 
-    // Compute derived fields
     let items: StockItem[] = rows.map((r) => {
       const currentStock = r.currentStock;
       const stockValuePaisa = Math.round(r.valueMilliPaisa / 1000);
       const avgCost =
-        currentStock > 0 ? Math.round(stockValuePaisa / (currentStock / 1000)) : 0;
+        currentStock > 0
+          ? Math.round(stockValuePaisa / (currentStock / 1000))
+          : 0;
       const prices = latestPrices.get(r.variantId);
 
       return {
@@ -143,17 +113,16 @@ export const inventoryService = {
         lastPurchaseDate: r.lastPurchaseDate
           ? Math.floor(r.lastPurchaseDate)
           : null,
-        lowStockThreshold: null, // populated in Phase 2.7
+        lowStockThreshold: r.lowStockThreshold ?? null,
       };
     });
 
-    // In-memory filters (small dataset, safe)
+    // Filters
     if (query.filter === "out") {
       items = items.filter((i) => i.currentStock === 0);
     } else if (query.filter === "in") {
       items = items.filter((i) => i.currentStock > 0);
     } else if (query.filter === "low") {
-      // Only variants with a threshold AND stock <= threshold
       items = items.filter(
         (i) =>
           i.lowStockThreshold !== null &&
@@ -161,7 +130,7 @@ export const inventoryService = {
       );
     }
 
-    // Sort
+    // Sorting
     const sort = query.sort ?? "name";
     items.sort((a, b) => {
       switch (sort) {
@@ -183,16 +152,12 @@ export const inventoryService = {
       }
     });
 
-    // Pagination
     return items.slice(query.offset, query.offset + query.limit);
   },
 
-  /**
-   * Aggregate inventory totals for dashboard tiles.
-   */
   async totals(): Promise<{
     totalVariants: number;
-    totalStockValue: number; // paisa
+    totalStockValue: number;
     lowStockCount: number;
     outOfStockCount: number;
   }> {
@@ -210,7 +175,26 @@ export const inventoryService = {
       )
       .all() as Array<{ totalVariants: number; valuePaisa: number }>;
 
-    // Out of stock count — variants that exist but have no remaining batches
+    // Low stock count: variants with a threshold set AND current stock <= threshold
+    // Includes out-of-stock variants with a threshold.
+    const [lowRow] = db.$client
+      .prepare(
+        `
+        SELECT COUNT(*) AS lowCount
+        FROM variants v
+        WHERE v.deleted_at IS NULL
+          AND v.low_stock_threshold IS NOT NULL
+          AND COALESCE(
+            (SELECT SUM(b.remaining_quantity)
+             FROM stock_batches b
+             WHERE b.variant_id = v.id AND b.remaining_quantity > 0),
+            0
+          ) <= v.low_stock_threshold
+        `
+      )
+      .all() as Array<{ lowCount: number }>;
+
+    // Out of stock: variants that exist but have no remaining batches
     const [outRow] = db.$client
       .prepare(
         `
@@ -228,18 +212,8 @@ export const inventoryService = {
     return {
       totalVariants: row?.totalVariants ?? 0,
       totalStockValue: Math.round(row?.valuePaisa ?? 0),
-      lowStockCount: 0, // Phase 2.7
+      lowStockCount: lowRow?.lowCount ?? 0,
       outOfStockCount: outRow?.outCount ?? 0,
     };
   },
 };
-
-// Silence unused import warnings — remove these when reusing
-void and;
-void asc;
-void desc;
-void eq;
-void isNull;
-void like;
-void or;
-void stockBatches;
