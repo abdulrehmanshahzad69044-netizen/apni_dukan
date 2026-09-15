@@ -53,6 +53,12 @@ import type {
   CreateAdjustmentInput,
   StockAdjustment,
 } from "./adjustment";
+import type {
+  Bill,
+  BillDetail,
+  BillListQuery,
+  CreateBillInput,
+} from "./bill";
 
 export type IpcChannels = {
   "app:ping": {
@@ -170,6 +176,9 @@ export type AppApi = {
       lowStockCount: number;
       outOfStockCount: number;
     }>;
+    priceHistory: (query: {
+      variantId: number;
+    }) => Promise<PriceHistoryEntry[]>;
   };
   adjustment: {
     list: (
@@ -177,6 +186,17 @@ export type AppApi = {
     ) => Promise<StockAdjustment[]>;
     get: (id: number) => Promise<StockAdjustment | null>;
     create: (input: CreateAdjustmentInput) => Promise<StockAdjustment>;
+  };
+  bill: {
+    list: (query?: Partial<BillListQuery>) => Promise<Bill[]>;
+    count: (
+      query?: Pick<
+        BillListQuery,
+        "customerId" | "status" | "fromDate" | "toDate"
+      >
+    ) => Promise<number>;
+    get: (id: number) => Promise<BillDetail | null>;
+    create: (input: CreateBillInput) => Promise<BillDetail>;
   };
 };
 

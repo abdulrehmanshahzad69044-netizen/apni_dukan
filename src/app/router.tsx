@@ -13,6 +13,8 @@ import { PurchaseDetailPage } from "@/features/purchases/PurchaseDetailPage";
 import { PurchaseEntryPage } from "@/features/purchases/PurchaseEntryPage";
 import { StockPage } from "@/features/inventory/StockPage";
 import { AdjustmentsPage } from "@/features/adjustments/AdjustmentsPage";
+import { BillsPage } from "@/features/bills/BillsPage";
+import { BillDetailPage } from "@/features/bills/BillDetailPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -20,7 +22,16 @@ export function AppRouter() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
-        <Route path="billing" element={<ComingSoonPage title="Billing" />} />
+
+        {/* Billing */}
+        <Route path="billing" element={<BillsPage />} />
+        <Route
+          path="billing/new"
+          element={<ComingSoonPage title="New Bill (Phase 3.3)" />}
+        />
+        <Route path="billing/:id" element={<BillDetailPage />} />
+
+        {/* Master data */}
         <Route path="customers" element={<CustomersPage />} />
         <Route path="companies" element={<CompaniesPage />} />
         <Route path="categories" element={<CategoriesPage />} />
@@ -28,11 +39,15 @@ export function AppRouter() {
         <Route path="unit-conversions" element={<UnitConversionsPage />} />
         <Route path="products" element={<ProductsPage />} />
         <Route path="variants" element={<VariantsPage />} />
+
+        {/* Inventory */}
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="purchases/new" element={<PurchaseEntryPage />} />
         <Route path="purchases/:id" element={<PurchaseDetailPage />} />
         <Route path="inventory" element={<StockPage />} />
         <Route path="adjustments" element={<AdjustmentsPage />} />
+
+        {/* Placeholders for later phases */}
         <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />
         <Route path="payments" element={<ComingSoonPage title="Payments" />} />
         <Route path="expenses" element={<ComingSoonPage title="Expenses" />} />

@@ -5678,8 +5678,158 @@ const stockAdjustmentsRelations = relations(
     })
   })
 );
+const billItemFifo = sqliteTable(
+  "bill_item_fifo",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    billItemId: integer$1("bill_item_id").notNull().references(() => billItems.id, { onDelete: "cascade" }),
+    batchId: integer$1("batch_id").notNull().references(() => stockBatches.id),
+    quantityConsumed: quantity("quantity_consumed").notNull(),
+    unitCost: money("unit_cost").notNull(),
+    ...timestamps
+  },
+  (t) => ({
+    billItemIdx: index("bill_item_fifo_item_idx").on(t.billItemId),
+    batchIdx: index("bill_item_fifo_batch_idx").on(t.batchId)
+  })
+);
+const billItemFifoRelations = relations(billItemFifo, ({ one }) => ({
+  billItem: one(billItems, {
+    fields: [billItemFifo.billItemId],
+    references: [billItems.id]
+  }),
+  batch: one(stockBatches, {
+    fields: [billItemFifo.batchId],
+    references: [stockBatches.id]
+  })
+}));
+const billItems = sqliteTable(
+  "bill_items",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    billId: integer$1("bill_id").notNull().references(() => bills.id, { onDelete: "cascade" }),
+    variantId: integer$1("variant_id").notNull().references(() => variants.id),
+    unitId: integer$1("unit_id").notNull().references(() => units.id),
+    quantity: quantity("quantity").notNull(),
+    unitPrice: money("unit_price").notNull(),
+    lineTotal: money("line_total").notNull(),
+    lineCogs: money("line_cogs").notNull().default(0),
+    ...timestamps
+  },
+  (t) => ({
+    billIdx: index("bill_items_bill_idx").on(t.billId),
+    variantIdx: index("bill_items_variant_idx").on(t.variantId)
+  })
+);
+const billItemsRelations = relations(billItems, ({ one, many }) => ({
+  bill: one(bills, {
+    fields: [billItems.billId],
+    references: [bills.id]
+  }),
+  variant: one(variants, {
+    fields: [billItems.variantId],
+    references: [variants.id]
+  }),
+  unit: one(units, {
+    fields: [billItems.unitId],
+    references: [units.id]
+  }),
+  fifoConsumptions: many(billItemFifo)
+}));
+const paymentAllocations = sqliteTable(
+  "payment_allocations",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    paymentId: integer$1("payment_id").notNull().references(() => payments.id, { onDelete: "cascade" }),
+    billId: integer$1("bill_id").notNull().references(() => bills.id),
+    amount: money("amount").notNull(),
+    ...timestamps
+  },
+  (t) => ({
+    paymentIdx: index("payment_alloc_payment_idx").on(t.paymentId),
+    billIdx: index("payment_alloc_bill_idx").on(t.billId)
+  })
+);
+const paymentAllocationsRelations = relations(
+  paymentAllocations,
+  ({ one }) => ({
+    payment: one(payments, {
+      fields: [paymentAllocations.paymentId],
+      references: [payments.id]
+    }),
+    bill: one(bills, {
+      fields: [paymentAllocations.billId],
+      references: [bills.id]
+    })
+  })
+);
+const payments = sqliteTable(
+  "payments",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    customerId: integer$1("customer_id").notNull().references(() => customers.id),
+    billId: integer$1("bill_id").references(() => bills.id),
+    amount: money("amount").notNull(),
+    paymentDate: integer$1("payment_date", { mode: "timestamp" }).notNull(),
+    remarks: text("remarks"),
+    ...timestamps
+  },
+  (t) => ({
+    customerIdx: index("payments_customer_idx").on(t.customerId),
+    billIdx: index("payments_bill_idx").on(t.billId),
+    dateIdx: index("payments_date_idx").on(t.paymentDate)
+  })
+);
+const paymentsRelations = relations(payments, ({ one, many }) => ({
+  customer: one(customers, {
+    fields: [payments.customerId],
+    references: [customers.id]
+  }),
+  bill: one(bills, {
+    fields: [payments.billId],
+    references: [bills.id]
+  }),
+  allocations: many(paymentAllocations)
+}));
+const bills = sqliteTable(
+  "bills",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    billNumber: text("bill_number").notNull().unique(),
+    customerId: integer$1("customer_id").references(() => customers.id),
+    billDate: integer$1("bill_date", { mode: "timestamp" }).notNull(),
+    totalAmount: money("total_amount").notNull(),
+    paidAmount: money("paid_amount").notNull().default(0),
+    remainingAmount: money("remaining_amount").notNull().default(0),
+    cogs: money("cogs").notNull().default(0),
+    status: text("status", {
+      enum: ["draft", "held", "finalized", "cancelled", "returned"]
+    }).notNull().default("finalized"),
+    remarks: text("remarks"),
+    ...timestamps
+  },
+  (t) => ({
+    customerIdx: index("bills_customer_idx").on(t.customerId),
+    dateIdx: index("bills_date_idx").on(t.billDate),
+    statusIdx: index("bills_status_idx").on(t.status)
+  })
+);
+const billsRelations = relations(bills, ({ one, many }) => ({
+  customer: one(customers, {
+    fields: [bills.customerId],
+    references: [customers.id]
+  }),
+  items: many(billItems),
+  payments: many(payments)
+}));
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
+  billItemFifo,
+  billItemFifoRelations,
+  billItems,
+  billItemsRelations,
+  bills,
+  billsRelations,
   categories,
   categoriesRelations,
   companies,
@@ -5687,6 +5837,10 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   customers,
   customersRelations,
   money,
+  paymentAllocations,
+  paymentAllocationsRelations,
+  payments,
+  paymentsRelations,
   products,
   productsRelations,
   purchases,
@@ -11805,6 +11959,328 @@ function registerAdjustmentIpc() {
     return adjustmentService.create(input);
   });
 }
+async function generateBillNumber() {
+  const db = getDb();
+  const year = (/* @__PURE__ */ new Date()).getFullYear();
+  const prefix = `BILL-${year}-`;
+  const [row] = await db.select({ max: sql`max(${bills.billNumber})` }).from(bills).where(like(bills.billNumber, `${prefix}%`));
+  const lastNumber = row?.max ? parseInt(row.max.slice(prefix.length), 10) : 0;
+  const next = (lastNumber + 1).toString().padStart(4, "0");
+  return `${prefix}${next}`;
+}
+function toBillDto(row) {
+  return {
+    id: row.id,
+    billNumber: row.billNumber,
+    customerId: row.customerId,
+    customerName: row.customerName,
+    billDate: Math.floor(row.billDate.getTime() / 1e3),
+    totalAmount: row.totalAmount,
+    paidAmount: row.paidAmount,
+    remainingAmount: row.remainingAmount,
+    cogs: row.cogs,
+    grossProfit: row.totalAmount - row.cogs,
+    status: row.status,
+    remarks: row.remarks,
+    itemCount: row.itemCount,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3)
+  };
+}
+const billService = {
+  /**
+   * Create a bill with FIFO consumption.
+   *
+   * Steps inside ONE transaction:
+   *  1. Generate bill number
+   *  2. Compute total from lines
+   *  3. Insert bill header
+   *  4. For each line:
+   *     a. FIFO-consume oldest batches
+   *     b. Update batch.remainingQuantity
+   *     c. Insert bill_items (with lineCogs computed)
+   *     d. Insert bill_item_fifo rows (traceability)
+   *     e. Insert stock_ledger entries
+   *  5. Update bill totals (totalAmount, cogs, remaining)
+   *  6. Update customer cachedOutstanding (if customer set + remaining > 0)
+   *
+   * Stock goes down. Cost is captured exactly. Nothing is guessed.
+   */
+  async create(input) {
+    const db = getDb();
+    const totalAmount = input.lines.reduce(
+      (sum, line) => sum + Math.round(line.quantity * line.unitPrice / 1e3),
+      0
+    );
+    const billDate = input.billDate ?? /* @__PURE__ */ new Date();
+    const billNumber = await generateBillNumber();
+    const paidAmount = input.paidAmount ?? 0;
+    const status = input.status ?? "finalized";
+    const billId = db.transaction((tx) => {
+      const [bill] = tx.insert(bills).values({
+        billNumber,
+        customerId: input.customerId ?? null,
+        billDate,
+        totalAmount,
+        paidAmount,
+        remainingAmount: 0,
+        cogs: 0,
+        status,
+        remarks: input.remarks ?? null
+      }).returning({ id: bills.id }).all();
+      let totalCogs = 0;
+      for (const line of input.lines) {
+        const availableBatches = tx.select().from(stockBatches).where(
+          and(
+            eq(stockBatches.variantId, line.variantId),
+            sql`${stockBatches.remainingQuantity} > 0`
+          )
+        ).orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id)).all();
+        const totalAvailable = availableBatches.reduce(
+          (sum, b) => sum + b.remainingQuantity,
+          0
+        );
+        if (totalAvailable < line.quantity) {
+          throw new Error(
+            `Not enough stock for variant ${line.variantId}. Available: ${(totalAvailable / 1e3).toFixed(3)}, requested: ${(line.quantity / 1e3).toFixed(3)}`
+          );
+        }
+        const lineTotal = Math.round(
+          line.quantity * line.unitPrice / 1e3
+        );
+        const [item] = tx.insert(billItems).values({
+          billId: bill.id,
+          variantId: line.variantId,
+          unitId: line.unitId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          lineTotal,
+          lineCogs: 0
+          // update after FIFO
+        }).returning({ id: billItems.id }).all();
+        let remaining = line.quantity;
+        let lineCogs = 0;
+        for (const batch of availableBatches) {
+          if (remaining <= 0) break;
+          const consume = Math.min(remaining, batch.remainingQuantity);
+          remaining -= consume;
+          const costContribution = Math.round(
+            consume * batch.purchasePrice / 1e3
+          );
+          lineCogs += costContribution;
+          tx.update(stockBatches).set({ remainingQuantity: batch.remainingQuantity - consume }).where(eq(stockBatches.id, batch.id)).run();
+          tx.insert(billItemFifo).values({
+            billItemId: item.id,
+            batchId: batch.id,
+            quantityConsumed: consume,
+            unitCost: batch.purchasePrice
+          }).run();
+          tx.insert(stockLedger).values({
+            batchId: batch.id,
+            variantId: line.variantId,
+            quantityChange: -consume,
+            unitCost: batch.purchasePrice,
+            movementType: "sale",
+            referenceType: "bill",
+            referenceId: bill.id,
+            notes: null
+          }).run();
+        }
+        tx.update(billItems).set({ lineCogs }).where(eq(billItems.id, item.id)).run();
+        totalCogs += lineCogs;
+      }
+      const remainingAmount = totalAmount - paidAmount;
+      tx.update(bills).set({
+        cogs: totalCogs,
+        remainingAmount,
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq(bills.id, bill.id)).run();
+      if (input.customerId && remainingAmount > 0 && status === "finalized") {
+        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, input.customerId)).limit(1).all();
+        if (cust) {
+          tx.update(customers).set({
+            cachedOutstanding: cust.cachedOutstanding + remainingAmount,
+            updatedAt: /* @__PURE__ */ new Date()
+          }).where(eq(customers.id, input.customerId)).run();
+        }
+      }
+      return bill.id;
+    });
+    const created = await this.getById(billId);
+    if (!created) throw new Error("Failed to load created bill");
+    return created;
+  },
+  async getById(id) {
+    const db = getDb();
+    const [header] = await db.select({
+      id: bills.id,
+      billNumber: bills.billNumber,
+      customerId: bills.customerId,
+      customerName: sql`c.name`,
+      billDate: bills.billDate,
+      totalAmount: bills.totalAmount,
+      paidAmount: bills.paidAmount,
+      remainingAmount: bills.remainingAmount,
+      cogs: bills.cogs,
+      status: bills.status,
+      remarks: bills.remarks,
+      itemCount: sql`(SELECT COUNT(*) FROM bill_items WHERE bill_id = ${bills.id})`,
+      createdAt: bills.createdAt,
+      updatedAt: bills.updatedAt
+    }).from(bills).leftJoin(sql`customers c`, sql`c.id = ${bills.customerId}`).where(eq(bills.id, id)).limit(1);
+    if (!header) return null;
+    const items = await db.select({
+      id: billItems.id,
+      variantId: billItems.variantId,
+      unitId: billItems.unitId,
+      quantity: billItems.quantity,
+      unitPrice: billItems.unitPrice,
+      lineTotal: billItems.lineTotal,
+      lineCogs: billItems.lineCogs,
+      productName: sql`p.name`,
+      variantName: sql`v.name`,
+      baseUnitShortName: sql`u.short_name`,
+      unitName: sql`unit.name`
+    }).from(billItems).innerJoin(sql`variants v`, sql`v.id = ${billItems.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).innerJoin(sql`units unit`, sql`unit.id = ${billItems.unitId}`).where(eq(billItems.billId, id)).orderBy(asc(billItems.id));
+    const fifoRows = await db.select({
+      id: billItemFifo.id,
+      billItemId: billItemFifo.billItemId,
+      batchId: billItemFifo.batchId,
+      quantityConsumed: billItemFifo.quantityConsumed,
+      unitCost: billItemFifo.unitCost,
+      batchPurchaseDate: stockBatches.purchaseDate
+    }).from(billItemFifo).innerJoin(
+      stockBatches,
+      eq(stockBatches.id, billItemFifo.batchId)
+    ).where(
+      sql`${billItemFifo.billItemId} IN (SELECT id FROM bill_items WHERE bill_id = ${id})`
+    );
+    const fifoByItem = {};
+    for (const r of fifoRows) {
+      const arr = fifoByItem[r.billItemId] ?? [];
+      arr.push({
+        id: r.id,
+        batchId: r.batchId,
+        batchPurchaseDate: Math.floor(r.batchPurchaseDate.getTime() / 1e3),
+        quantityConsumed: r.quantityConsumed,
+        unitCost: r.unitCost
+      });
+      fifoByItem[r.billItemId] = arr;
+    }
+    const itemsDto = items.map((i) => ({
+      id: i.id,
+      variantId: i.variantId,
+      productName: i.productName,
+      variantName: i.variantName,
+      baseUnitShortName: i.baseUnitShortName,
+      unitId: i.unitId,
+      unitName: i.unitName,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      lineTotal: i.lineTotal,
+      lineCogs: i.lineCogs
+    }));
+    return {
+      ...toBillDto(header),
+      items: itemsDto,
+      fifo: fifoByItem
+    };
+  },
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.customerId) {
+      conditions.push(eq(bills.customerId, query.customerId));
+    }
+    if (query.status) {
+      conditions.push(eq(bills.status, query.status));
+    }
+    if (query.fromDate) {
+      conditions.push(gte(bills.billDate, query.fromDate));
+    }
+    if (query.toDate) {
+      conditions.push(lte(bills.billDate, query.toDate));
+    }
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(like(bills.billNumber, term), like(sql`c.name`, term))
+      );
+    }
+    const rows = await db.select({
+      id: bills.id,
+      billNumber: bills.billNumber,
+      customerId: bills.customerId,
+      customerName: sql`c.name`,
+      billDate: bills.billDate,
+      totalAmount: bills.totalAmount,
+      paidAmount: bills.paidAmount,
+      remainingAmount: bills.remainingAmount,
+      cogs: bills.cogs,
+      status: bills.status,
+      remarks: bills.remarks,
+      itemCount: sql`(SELECT COUNT(*) FROM bill_items WHERE bill_id = ${bills.id})`,
+      createdAt: bills.createdAt,
+      updatedAt: bills.updatedAt
+    }).from(bills).leftJoin(sql`customers c`, sql`c.id = ${bills.customerId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(bills.billDate), desc(bills.id)).limit(query.limit).offset(query.offset);
+    return rows.map(toBillDto);
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.customerId)
+      conditions.push(eq(bills.customerId, query.customerId));
+    if (query.status) conditions.push(eq(bills.status, query.status));
+    if (query.fromDate)
+      conditions.push(gte(bills.billDate, query.fromDate));
+    if (query.toDate) conditions.push(lte(bills.billDate, query.toDate));
+    const [row] = await db.select({ count: sql`count(*)` }).from(bills).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  }
+};
+const billLineSchema = object({
+  variantId: number().int().positive(),
+  unitId: number().int().positive(),
+  quantity: number().int().positive("Quantity must be positive"),
+  // milli-units
+  unitPrice: number().int().nonnegative("Price cannot be negative")
+  // paisa
+});
+const createBillSchema = object({
+  customerId: number().int().positive().nullable().optional(),
+  billDate: date().optional(),
+  /** Amount paid at bill time (paisa) */
+  paidAmount: number().int().nonnegative().optional().default(0),
+  remarks: string().trim().max(500).optional().or(literal("")).transform((v) => v === "" ? void 0 : v),
+  status: _enum(["draft", "held", "finalized"]).optional().default("finalized"),
+  lines: array(billLineSchema).min(1, "Add at least one item")
+});
+const billListQuerySchema = object({
+  search: string().trim().optional(),
+  customerId: number().int().positive().optional(),
+  status: _enum(["draft", "held", "finalized", "cancelled", "returned"]).optional(),
+  fromDate: date().optional(),
+  toDate: date().optional(),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerBillIpc() {
+  require$$3$1.ipcMain.handle("bill:list", async (_e, rawQuery) => {
+    const query = billListQuerySchema.parse(rawQuery ?? {});
+    return billService.list(query);
+  });
+  require$$3$1.ipcMain.handle("bill:count", async (_e, rawQuery) => {
+    const query = billListQuerySchema.pick({ customerId: true, status: true, fromDate: true, toDate: true }).parse(rawQuery ?? {});
+    return billService.count(query);
+  });
+  require$$3$1.ipcMain.handle("bill:get", async (_e, id) => {
+    return billService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("bill:create", async (_e, rawInput) => {
+    const input = createBillSchema.parse(rawInput);
+    return billService.create(input);
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -11816,6 +12292,7 @@ function registerAllIpc() {
   registerPurchaseIpc();
   registerInventoryIpc();
   registerAdjustmentIpc();
+  registerBillIpc();
 }
 if (started) {
   require$$3$1.app.quit();

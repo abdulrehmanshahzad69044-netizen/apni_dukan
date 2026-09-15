@@ -76,7 +76,7 @@ const api: AppApi = {
     setPaidAmount: (input) =>
       ipcRenderer.invoke("purchase:setPaidAmount", input),
   },
-    inventory: {
+  inventory: {
     listStock: (query) => ipcRenderer.invoke("inventory:listStock", query ?? {}),
     totals: () => ipcRenderer.invoke("inventory:totals"),
     priceHistory: (query) =>
@@ -86,6 +86,12 @@ const api: AppApi = {
     list: (query) => ipcRenderer.invoke("adjustment:list", query ?? {}),
     get: (id) => ipcRenderer.invoke("adjustment:get", id),
     create: (input) => ipcRenderer.invoke("adjustment:create", input),
+  },
+  bill: {
+    list: (query) => ipcRenderer.invoke("bill:list", query ?? {}),
+    count: (query) => ipcRenderer.invoke("bill:count", query ?? {}),
+    get: (id) => ipcRenderer.invoke("bill:get", id),
+    create: (input) => ipcRenderer.invoke("bill:create", input),
   },
 };
 

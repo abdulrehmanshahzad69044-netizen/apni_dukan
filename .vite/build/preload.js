@@ -82,6 +82,12 @@ const api = {
     list: (query) => electron.ipcRenderer.invoke("adjustment:list", query ?? {}),
     get: (id) => electron.ipcRenderer.invoke("adjustment:get", id),
     create: (input) => electron.ipcRenderer.invoke("adjustment:create", input)
+  },
+  bill: {
+    list: (query) => electron.ipcRenderer.invoke("bill:list", query ?? {}),
+    count: (query) => electron.ipcRenderer.invoke("bill:count", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("bill:get", id),
+    create: (input) => electron.ipcRenderer.invoke("bill:create", input)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

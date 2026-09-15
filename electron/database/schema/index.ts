@@ -15,13 +15,11 @@ export * from "./stock-batches";
 export * from "./stock-ledger";
 export * from "./stock-adjustments";
 
-// Phase 3:
-// export * from "./bills";
-// export * from "./bill-items";
-// export * from "./bill-item-fifo";
-// Phase 4:
-// export * from "./payments";
-// export * from "./payment-allocations";
-// Phase 5:
-// export * from "./expenses";
-// export * from "./company-payments";
+// Phase 3 — Billing
+export * from "./bills";
+export * from "./bill-items";
+export * from "./bill-item-fifo";
+
+// Phase 4 — Payments (tables created now, service in Phase 4)
+export * from "./payments";
+export * from "./payment-allocations";
