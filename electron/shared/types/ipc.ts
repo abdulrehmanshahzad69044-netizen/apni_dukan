@@ -59,6 +59,15 @@ import type {
   BillListQuery,
   CreateBillInput,
 } from "./bill";
+import type {
+  CreatePaymentInput,
+  KhaataDetail,
+  KhaataEntry,
+  KhaataListQuery,
+  Payment,
+  PaymentDetail,
+  PaymentListQuery,
+} from "./payment";
 
 export type IpcChannels = {
   "app:ping": {
@@ -197,6 +206,19 @@ export type AppApi = {
     ) => Promise<number>;
     get: (id: number) => Promise<BillDetail | null>;
     create: (input: CreateBillInput) => Promise<BillDetail>;
+  };
+  payment: {
+    list: (query?: Partial<PaymentListQuery>) => Promise<Payment[]>;
+    count: (
+      query?: Pick<PaymentListQuery, "customerId" | "fromDate" | "toDate">
+    ) => Promise<number>;
+    get: (id: number) => Promise<PaymentDetail | null>;
+    create: (input: CreatePaymentInput) => Promise<PaymentDetail>;
+  };
+  khaata: {
+    list: (query?: Partial<KhaataListQuery>) => Promise<KhaataEntry[]>;
+    detail: (customerId: number) => Promise<KhaataDetail | null>;
+    totalOutstanding: () => Promise<number>;
   };
 };
 

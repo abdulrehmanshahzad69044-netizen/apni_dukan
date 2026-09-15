@@ -6694,6 +6694,8 @@ const string$1 = (params) => {
 const integer = /^-?\d+$/;
 const number$1 = /^-?\d+(?:\.\d+)?$/;
 const boolean$1 = /^(?:true|false)$/i;
+const _null$2 = /^null$/i;
+const _undefined$2 = /^undefined$/i;
 const lowercase = /^[^A-Z]*$/;
 const uppercase = /^[^a-z]*$/;
 const $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
@@ -7582,6 +7584,40 @@ const $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
       return payload;
     payload.issues.push({
       expected: "boolean",
+      code: "invalid_type",
+      input,
+      inst
+    });
+    return payload;
+  };
+});
+const $ZodUndefined = /* @__PURE__ */ $constructor("$ZodUndefined", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.pattern = _undefined$2;
+  inst._zod.values = /* @__PURE__ */ new Set([void 0]);
+  inst._zod.parse = (payload, _ctx) => {
+    const input = payload.value;
+    if (typeof input === "undefined")
+      return payload;
+    payload.issues.push({
+      expected: "undefined",
+      code: "invalid_type",
+      input,
+      inst
+    });
+    return payload;
+  };
+});
+const $ZodNull = /* @__PURE__ */ $constructor("$ZodNull", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.pattern = _null$2;
+  inst._zod.values = /* @__PURE__ */ new Set([null]);
+  inst._zod.parse = (payload, _ctx) => {
+    const input = payload.value;
+    if (input === null)
+      return payload;
+    payload.issues.push({
+      expected: "null",
       code: "invalid_type",
       input,
       inst
@@ -8754,6 +8790,20 @@ function _boolean(Class, params) {
   });
 }
 // @__NO_SIDE_EFFECTS__
+function _undefined$1(Class, params) {
+  return new Class({
+    type: "undefined",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
+function _null$1(Class, params) {
+  return new Class({
+    type: "null",
+    ...normalizeParams(params)
+  });
+}
+// @__NO_SIDE_EFFECTS__
 function _unknown(Class) {
   return new Class({
     type: "unknown"
@@ -9404,6 +9454,20 @@ const numberProcessor = (schema2, ctx, _json, _params) => {
 };
 const booleanProcessor = (_schema, _ctx, json, _params) => {
   json.type = "boolean";
+};
+const nullProcessor = (_schema, ctx, json, _params) => {
+  if (ctx.target === "openapi-3.0") {
+    json.type = "string";
+    json.nullable = true;
+    json.enum = [null];
+  } else {
+    json.type = "null";
+  }
+};
+const undefinedProcessor = (_schema, ctx, _json, _params) => {
+  if (ctx.unrepresentable === "throw") {
+    throw new Error("Undefined cannot be represented in JSON Schema");
+  }
 };
 const neverProcessor = (_schema, _ctx, json, _params) => {
   json.not = {};
@@ -10108,6 +10172,22 @@ const ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
 function boolean(params) {
   return /* @__PURE__ */ _boolean(ZodBoolean, params);
 }
+const ZodUndefined = /* @__PURE__ */ $constructor("ZodUndefined", (inst, def) => {
+  $ZodUndefined.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => undefinedProcessor(inst, ctx);
+});
+function _undefined(params) {
+  return /* @__PURE__ */ _undefined$1(ZodUndefined, params);
+}
+const ZodNull = /* @__PURE__ */ $constructor("ZodNull", (inst, def) => {
+  $ZodNull.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => nullProcessor(inst, ctx, json);
+});
+function _null(params) {
+  return /* @__PURE__ */ _null$1(ZodNull, params);
+}
 const ZodUnknown = /* @__PURE__ */ $constructor("ZodUnknown", (inst, def) => {
   $ZodUnknown.init(inst, def);
   ZodType.init(inst, def);
@@ -10486,7 +10566,7 @@ function date(params) {
 }
 const createCustomerSchema = object({
   name: string().trim().min(1, "Name is required").max(120, "Name is too long"),
-  contactNumber: string().trim().max(30).optional().or(literal("")).transform((v) => v === "" ? void 0 : v),
+  contactNumber: string().trim().max(30).optional().transform((v) => v === "" || v === void 0 ? void 0 : v),
   address: string().trim().max(500).optional().or(literal("")).transform((v) => v === "" ? void 0 : v)
 });
 const updateCustomerSchema = createCustomerSchema.partial().extend({
@@ -10601,7 +10681,7 @@ const companyService = {
 };
 const createCompanySchema = object({
   name: string().trim().min(1, "Name is required").max(120, "Name is too long"),
-  contactNumber: string().trim().max(30).optional().or(literal("")).transform((v) => v === "" ? void 0 : v)
+  contactNumber: string().trim().max(30).optional().transform((v) => v === "" || v === void 0 ? void 0 : v)
 });
 const updateCompanySchema = createCompanySchema.partial().extend({
   id: number().int().positive()
@@ -11468,7 +11548,7 @@ const purchaseService = {
     return updated;
   }
 };
-const purchaseLineSchema = object({
+object({
   variantId: number().int().positive(),
   quantity: number().int().positive("Quantity must be positive"),
   purchasePrice: number().int().nonnegative("Price cannot be negative"),
@@ -11479,8 +11559,11 @@ const createPurchaseSchema = object({
   companyId: number().int().positive(),
   purchaseDate: date().optional(),
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: string().trim().max(500).optional().or(literal("")).transform((v) => v === "" ? void 0 : v),
-  lines: array(purchaseLineSchema).min(1, "Add at least one line")
+  remarks: union([string(), _null(), _undefined()]).transform((v) => {
+    if (v === null || v === void 0) return void 0;
+    const t = v.trim();
+    return t === "" ? void 0 : t;
+  })
 });
 const purchaseListQuerySchema = object({
   search: string().trim().optional(),
@@ -12238,6 +12321,13 @@ const billService = {
     return row?.count ?? 0;
   }
 };
+const optionalTrimmedString = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+  if (v === null || v === void 0) return void 0;
+  const t = v.trim();
+  if (t === "") return void 0;
+  if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+  return t;
+});
 const billLineSchema = object({
   variantId: number().int().positive(),
   unitId: number().int().positive(),
@@ -12249,9 +12339,8 @@ const billLineSchema = object({
 const createBillSchema = object({
   customerId: number().int().positive().nullable().optional(),
   billDate: date().optional(),
-  /** Amount paid at bill time (paisa) */
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: string().trim().max(500).optional().or(literal("")).transform((v) => v === "" ? void 0 : v),
+  remarks: optionalTrimmedString(500),
   status: _enum(["draft", "held", "finalized"]).optional().default("finalized"),
   lines: array(billLineSchema).min(1, "Add at least one item")
 });
@@ -12281,6 +12370,287 @@ function registerBillIpc() {
     return billService.create(input);
   });
 }
+function toPaymentDto(row) {
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    customerName: row.customerName,
+    billId: row.billId,
+    billNumber: row.billNumber,
+    amount: row.amount,
+    paymentDate: Math.floor(row.paymentDate.getTime() / 1e3),
+    remarks: row.remarks,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3)
+  };
+}
+const paymentService = {
+  async create(input) {
+    const db = getDb();
+    const paymentDate = input.paymentDate ?? /* @__PURE__ */ new Date();
+    const paymentId = db.transaction((tx) => {
+      const [cust] = tx.select().from(customers).where(eq(customers.id, input.customerId)).limit(1).all();
+      if (!cust) throw new Error(`Customer ${input.customerId} not found`);
+      const [payment] = tx.insert(payments).values({
+        customerId: input.customerId,
+        billId: null,
+        amount: input.amount,
+        paymentDate,
+        remarks: input.remarks ?? null
+      }).returning({ id: payments.id }).all();
+      const unpaidBills = tx.select().from(bills).where(
+        and(
+          eq(bills.customerId, input.customerId),
+          eq(bills.status, "finalized"),
+          sql`${bills.remainingAmount} > 0`
+        )
+      ).orderBy(asc(bills.billDate), asc(bills.id)).all();
+      let remainingToAllocate = input.amount;
+      let totalAllocated = 0;
+      for (const bill of unpaidBills) {
+        if (remainingToAllocate <= 0) break;
+        const allocate = Math.min(remainingToAllocate, bill.remainingAmount);
+        remainingToAllocate -= allocate;
+        totalAllocated += allocate;
+        tx.insert(paymentAllocations).values({
+          paymentId: payment.id,
+          billId: bill.id,
+          amount: allocate
+        }).run();
+        tx.update(bills).set({
+          paidAmount: bill.paidAmount + allocate,
+          remainingAmount: bill.remainingAmount - allocate,
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq(bills.id, bill.id)).run();
+      }
+      if (totalAllocated > 0) {
+        tx.update(customers).set({
+          cachedOutstanding: cust.cachedOutstanding - totalAllocated,
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq(customers.id, input.customerId)).run();
+      }
+      return payment.id;
+    });
+    const created = await this.getById(paymentId);
+    if (!created) throw new Error("Failed to load created payment");
+    return created;
+  },
+  async getById(id) {
+    const db = getDb();
+    const [header] = await db.select({
+      id: payments.id,
+      customerId: payments.customerId,
+      customerName: sql`c.name`,
+      billId: payments.billId,
+      billNumber: sql`b.bill_number`,
+      amount: payments.amount,
+      paymentDate: payments.paymentDate,
+      remarks: payments.remarks,
+      createdAt: payments.createdAt
+    }).from(payments).innerJoin(sql`customers c`, sql`c.id = ${payments.customerId}`).leftJoin(sql`bills b`, sql`b.id = ${payments.billId}`).where(eq(payments.id, id)).limit(1);
+    if (!header) return null;
+    const allocations = await db.select({
+      id: paymentAllocations.id,
+      billId: paymentAllocations.billId,
+      billNumber: sql`b.bill_number`,
+      billDate: sql`b.bill_date`,
+      amount: paymentAllocations.amount
+    }).from(paymentAllocations).innerJoin(sql`bills b`, sql`b.id = ${paymentAllocations.billId}`).where(eq(paymentAllocations.paymentId, id)).orderBy(asc(sql`b.bill_date`));
+    return {
+      ...toPaymentDto(header),
+      allocations: allocations.map((a) => ({
+        id: a.id,
+        billId: a.billId,
+        billNumber: a.billNumber,
+        billDate: Math.floor(
+          typeof a.billDate === "object" ? a.billDate.getTime() / 1e3 : Number(a.billDate)
+        ),
+        amount: a.amount
+      }))
+    };
+  },
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.customerId) {
+      conditions.push(eq(payments.customerId, query.customerId));
+    }
+    if (query.fromDate) {
+      conditions.push(gte(payments.paymentDate, query.fromDate));
+    }
+    if (query.toDate) {
+      conditions.push(lte(payments.paymentDate, query.toDate));
+    }
+    if (query.search) {
+      conditions.push(like(sql`c.name`, `%${query.search}%`));
+    }
+    const rows = await db.select({
+      id: payments.id,
+      customerId: payments.customerId,
+      customerName: sql`c.name`,
+      billId: payments.billId,
+      billNumber: sql`b.bill_number`,
+      amount: payments.amount,
+      paymentDate: payments.paymentDate,
+      remarks: payments.remarks,
+      createdAt: payments.createdAt
+    }).from(payments).innerJoin(sql`customers c`, sql`c.id = ${payments.customerId}`).leftJoin(sql`bills b`, sql`b.id = ${payments.billId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(payments.paymentDate), desc(payments.id)).limit(query.limit).offset(query.offset);
+    return rows.map(toPaymentDto);
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.customerId)
+      conditions.push(eq(payments.customerId, query.customerId));
+    if (query.fromDate)
+      conditions.push(gte(payments.paymentDate, query.fromDate));
+    if (query.toDate)
+      conditions.push(lte(payments.paymentDate, query.toDate));
+    const [row] = await db.select({ count: sql`count(*)` }).from(payments).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  }
+};
+const khaataService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [
+      sql`${customers.cachedOutstanding} > 0`,
+      isNull(customers.deletedAt)
+    ];
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(
+          like(customers.name, term),
+          like(customers.contactNumber, term)
+        )
+      );
+    }
+    const rows = await db.select({
+      customerId: customers.id,
+      customerName: customers.name,
+      contactNumber: customers.contactNumber,
+      totalOutstanding: customers.cachedOutstanding,
+      billCount: sql`(
+          SELECT COUNT(*) FROM bills
+          WHERE customer_id = ${customers.id}
+            AND status = 'finalized'
+            AND remaining_amount > 0
+        )`,
+      oldestBillDate: sql`(
+          SELECT MIN(bill_date) FROM bills
+          WHERE customer_id = ${customers.id}
+            AND status = 'finalized'
+            AND remaining_amount > 0
+        )`
+    }).from(customers).where(and(...conditions)).orderBy(desc(customers.cachedOutstanding)).limit(query.limit).offset(query.offset);
+    return rows.map((r) => ({
+      customerId: r.customerId,
+      customerName: r.customerName,
+      contactNumber: r.contactNumber,
+      totalOutstanding: r.totalOutstanding,
+      billCount: r.billCount,
+      oldestBillDate: r.oldestBillDate
+    }));
+  },
+  async detail(customerId) {
+    const db = getDb();
+    const [cust] = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+    if (!cust) return null;
+    const rows = await db.select({
+      billId: bills.id,
+      billNumber: bills.billNumber,
+      billDate: bills.billDate,
+      totalAmount: bills.totalAmount,
+      paidAmount: bills.paidAmount,
+      remainingAmount: bills.remainingAmount
+    }).from(bills).where(
+      and(
+        eq(bills.customerId, customerId),
+        eq(bills.status, "finalized"),
+        sql`${bills.remainingAmount} > 0`
+      )
+    ).orderBy(asc(bills.billDate), asc(bills.id));
+    const billsDto = rows.map((r) => ({
+      billId: r.billId,
+      billNumber: r.billNumber,
+      billDate: Math.floor(r.billDate.getTime() / 1e3),
+      totalAmount: r.totalAmount,
+      paidAmount: r.paidAmount,
+      remainingAmount: r.remainingAmount
+    }));
+    const totalOutstanding = billsDto.reduce(
+      (s, b) => s + b.remainingAmount,
+      0
+    );
+    return {
+      customerId: cust.id,
+      customerName: cust.name,
+      contactNumber: cust.contactNumber,
+      address: cust.address,
+      totalOutstanding,
+      bills: billsDto
+    };
+  },
+  async totalOutstanding() {
+    const db = getDb();
+    const [row] = await db.select({
+      total: sql`COALESCE(SUM(${customers.cachedOutstanding}), 0)`
+    }).from(customers).where(isNull(customers.deletedAt));
+    return row?.total ?? 0;
+  }
+};
+const createPaymentSchema = object({
+  customerId: number().int().positive(),
+  amount: number().int().positive("Amount must be positive"),
+  // paisa
+  paymentDate: date().optional(),
+  remarks: union([string(), _null(), _undefined()]).transform((v) => {
+    if (v === null || v === void 0) return void 0;
+    const t = v.trim();
+    return t === "" ? void 0 : t;
+  })
+});
+const paymentListQuerySchema = object({
+  customerId: number().int().positive().optional(),
+  search: string().trim().optional(),
+  // customer name
+  fromDate: date().optional(),
+  toDate: date().optional(),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+const khaataListQuerySchema = object({
+  search: string().trim().optional(),
+  limit: number().int().positive().max(500).optional().default(200),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerPaymentIpc() {
+  require$$3$1.ipcMain.handle("payment:list", async (_e, rawQuery) => {
+    const query = paymentListQuerySchema.parse(rawQuery ?? {});
+    return paymentService.list(query);
+  });
+  require$$3$1.ipcMain.handle("payment:count", async (_e, rawQuery) => {
+    const query = paymentListQuerySchema.pick({ customerId: true, fromDate: true, toDate: true }).parse(rawQuery ?? {});
+    return paymentService.count(query);
+  });
+  require$$3$1.ipcMain.handle("payment:get", async (_e, id) => {
+    return paymentService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("payment:create", async (_e, rawInput) => {
+    const input = createPaymentSchema.parse(rawInput);
+    return paymentService.create(input);
+  });
+  require$$3$1.ipcMain.handle("khaata:list", async (_e, rawQuery) => {
+    const query = khaataListQuerySchema.parse(rawQuery ?? {});
+    return khaataService.list(query);
+  });
+  require$$3$1.ipcMain.handle("khaata:detail", async (_e, customerId) => {
+    return khaataService.detail(customerId);
+  });
+  require$$3$1.ipcMain.handle("khaata:totalOutstanding", async () => {
+    return khaataService.totalOutstanding();
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -12293,6 +12663,7 @@ function registerAllIpc() {
   registerInventoryIpc();
   registerAdjustmentIpc();
   registerBillIpc();
+  registerPaymentIpc();
 }
 if (started) {
   require$$3$1.app.quit();

@@ -9,6 +9,7 @@ import { registerPurchaseIpc } from "./purchase.ipc";
 import { registerInventoryIpc } from "./inventory.ipc";
 import { registerAdjustmentIpc } from "./adjustment.ipc";
 import { registerBillIpc } from "./bill.ipc";
+import { registerPaymentIpc } from "./payment.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -22,7 +23,5 @@ export function registerAllIpc() {
   registerInventoryIpc();
   registerAdjustmentIpc();
   registerBillIpc();
-  // Phase 4:
-  // registerPaymentIpc();
-  // registerKhaataIpc();
+  registerPaymentIpc();
 }

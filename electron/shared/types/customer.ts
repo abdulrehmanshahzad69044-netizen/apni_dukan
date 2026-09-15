@@ -24,12 +24,11 @@ export const createCustomerSchema = z.object({
     .min(1, "Name is required")
     .max(120, "Name is too long"),
   contactNumber: z
-    .string()
-    .trim()
-    .max(30)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v === "" ? undefined : v)),
+  .string()
+  .trim()
+  .max(30)
+  .optional()
+  .transform((v) => (v === "" || v === undefined ? undefined : v)),
   address: z
     .string()
     .trim()

@@ -55,13 +55,12 @@ export const createPurchaseSchema = z.object({
   purchaseDate: z.coerce.date().optional(),
   paidAmount: z.number().int().nonnegative().optional().default(0),
   remarks: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v === "" ? undefined : v)),
-  lines: z.array(purchaseLineSchema).min(1, "Add at least one line"),
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => {
+    if (v === null || v === undefined) return undefined;
+    const t = v.trim();
+    return t === "" ? undefined : t;
+  }),
 });
 
 export type CreatePurchaseInput = z.infer<typeof createPurchaseSchema>;

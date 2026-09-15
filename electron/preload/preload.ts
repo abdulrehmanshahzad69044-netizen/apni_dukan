@@ -93,6 +93,17 @@ const api: AppApi = {
     get: (id) => ipcRenderer.invoke("bill:get", id),
     create: (input) => ipcRenderer.invoke("bill:create", input),
   },
+  payment: {
+    list: (query) => ipcRenderer.invoke("payment:list", query ?? {}),
+    count: (query) => ipcRenderer.invoke("payment:count", query ?? {}),
+    get: (id) => ipcRenderer.invoke("payment:get", id),
+    create: (input) => ipcRenderer.invoke("payment:create", input),
+  },
+  khaata: {
+    list: (query) => ipcRenderer.invoke("khaata:list", query ?? {}),
+    detail: (customerId) => ipcRenderer.invoke("khaata:detail", customerId),
+    totalOutstanding: () => ipcRenderer.invoke("khaata:totalOutstanding"),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

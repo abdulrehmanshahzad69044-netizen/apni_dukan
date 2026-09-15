@@ -759,11 +759,13 @@ export function BillEntryPage() {
 
     setSaving(true);
     try {
+      // Always send remarks as a string — "" when empty.
+      // This avoids any optional-null-undefined edge cases in Zod.
       const created = await billApi.create({
         customerId: customerId === "" ? null : Number(customerId),
-        billDate: billDate,
+        billDate: new Date(billDate),
         paidAmount: paidPaisa,
-        remarks: remarks.trim() ? remarks.trim() : null,
+        remarks: remarks.trim(),
         lines: lines.map((l) => ({
           variantId: l.variantId,
           unitId: l.unitId,

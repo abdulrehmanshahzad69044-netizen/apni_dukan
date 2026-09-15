@@ -88,6 +88,17 @@ const api = {
     count: (query) => electron.ipcRenderer.invoke("bill:count", query ?? {}),
     get: (id) => electron.ipcRenderer.invoke("bill:get", id),
     create: (input) => electron.ipcRenderer.invoke("bill:create", input)
+  },
+  payment: {
+    list: (query) => electron.ipcRenderer.invoke("payment:list", query ?? {}),
+    count: (query) => electron.ipcRenderer.invoke("payment:count", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("payment:get", id),
+    create: (input) => electron.ipcRenderer.invoke("payment:create", input)
+  },
+  khaata: {
+    list: (query) => electron.ipcRenderer.invoke("khaata:list", query ?? {}),
+    detail: (customerId) => electron.ipcRenderer.invoke("khaata:detail", customerId),
+    totalOutstanding: () => electron.ipcRenderer.invoke("khaata:totalOutstanding")
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

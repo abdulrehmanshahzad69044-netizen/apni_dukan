@@ -37,7 +37,7 @@ export type BillItem = {
 export type BillItemFifoEntry = {
   id: number;
   batchId: number;
-  batchPurchaseDate: number;
+  batchPurchaseDate: number; // unix seconds
   quantityConsumed: number; // milli-units
   unitCost: number; // paisa
 };
@@ -47,7 +47,26 @@ export type BillDetail = Bill & {
   fifo: Record<number, BillItemFifoEntry[]>; // keyed by billItemId
 };
 
-// ---------- Input ----------
+// ---------- Shared optional-string helper ----------
+
+/**
+ * Bulletproof optional string:
+ *   - accepts string | null | undefined
+ *   - trims and converts empty/null/undefined → undefined
+ *   - enforces max length
+ *
+ * Uses a union so it can NEVER fail on `undefined` or `null`.
+ */
+const optionalTrimmedString = (max: number) =>
+  z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
+    if (v === null || v === undefined) return undefined;
+    const t = v.trim();
+    if (t === "") return undefined;
+    if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+    return t;
+  });
+
+// ---------- Input schemas ----------
 
 export const billLineSchema = z.object({
   variantId: z.number().int().positive(),
@@ -61,15 +80,8 @@ export type BillLineInput = z.infer<typeof billLineSchema>;
 export const createBillSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
   billDate: z.coerce.date().optional(),
-  /** Amount paid at bill time (paisa) */
   paidAmount: z.number().int().nonnegative().optional().default(0),
-  remarks: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v === "" ? undefined : v)),
+  remarks: optionalTrimmedString(500),
   status: z
     .enum(["draft", "held", "finalized"])
     .optional()
@@ -79,7 +91,7 @@ export const createBillSchema = z.object({
 
 export type CreateBillInput = z.infer<typeof createBillSchema>;
 
-// ---------- Query ----------
+// ---------- Query schema ----------
 
 export const billListQuerySchema = z.object({
   search: z.string().trim().optional(),

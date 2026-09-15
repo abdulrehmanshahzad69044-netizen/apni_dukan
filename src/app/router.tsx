@@ -16,6 +16,9 @@ import { AdjustmentsPage } from "@/features/adjustments/AdjustmentsPage";
 import { BillsPage } from "@/features/bills/BillsPage";
 import { BillDetailPage } from "@/features/bills/BillDetailPage";
 import { BillEntryPage } from "@/features/bills/BillEntryPage";
+import { KhaataPage } from "@/features/khaata/KhaataPage";
+import { KhaataDetailPage } from "@/features/khaata/KhaataDetailPage";
+import { PaymentsPage } from "@/features/payments/PaymentsPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -45,9 +48,12 @@ export function AppRouter() {
         <Route path="inventory" element={<StockPage />} />
         <Route path="adjustments" element={<AdjustmentsPage />} />
 
+        {/* Khaata & Payments */}
+        <Route path="khaata" element={<KhaataPage />} />
+        <Route path="khaata/:customerId" element={<KhaataDetailPage />} />
+        <Route path="payments" element={<PaymentsPage />} />
+
         {/* Later phases */}
-        <Route path="khaata" element={<ComingSoonPage title="Khaata" />} />
-        <Route path="payments" element={<ComingSoonPage title="Payments" />} />
         <Route path="expenses" element={<ComingSoonPage title="Expenses" />} />
         <Route path="reports" element={<ComingSoonPage title="Reports" />} />
         <Route path="settings" element={<ComingSoonPage title="Settings" />} />

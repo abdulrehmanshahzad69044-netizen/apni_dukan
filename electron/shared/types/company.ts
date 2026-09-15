@@ -22,8 +22,7 @@ export const createCompanySchema = z.object({
     .trim()
     .max(30)
     .optional()
-    .or(z.literal(""))
-    .transform((v) => (v === "" ? undefined : v)),
+    .transform((v) => (v === "" || v === undefined ? undefined : v)),
 });
 
 export const updateCompanySchema = createCompanySchema.partial().extend({
