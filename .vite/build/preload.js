@@ -117,6 +117,10 @@ const api = {
     create: (input) => electron.ipcRenderer.invoke("companyPayment:create", input),
     delete: (id) => electron.ipcRenderer.invoke("companyPayment:delete", id),
     totalOutstanding: () => electron.ipcRenderer.invoke("companyPayment:totalOutstanding")
+  },
+  report: {
+    full: (query) => electron.ipcRenderer.invoke("report:full", query ?? {}),
+    today: () => electron.ipcRenderer.invoke("report:today")
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

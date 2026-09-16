@@ -21,6 +21,7 @@ import { KhaataDetailPage } from "@/features/khaata/KhaataDetailPage";
 import { PaymentsPage } from "@/features/payments/PaymentsPage";
 import { ExpensesPage } from "@/features/expenses/ExpensesPage";
 import { CompanyPaymentsPage } from "@/features/company-payments/CompanyPaymentsPage";
+import { ReportsPage } from "@/features/reports/ReportsPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -59,8 +60,10 @@ export function AppRouter() {
         {/* Expenses */}
         <Route path="expenses" element={<ExpensesPage />} />
 
+        {/* Reports */}
+        <Route path="reports" element={<ReportsPage />} />
+
         {/* Later */}
-        <Route path="reports" element={<ComingSoonPage title="Reports" />} />
         <Route path="settings" element={<ComingSoonPage title="Settings" />} />
         <Route path="*" element={<ComingSoonPage title="Not Found" />} />
       </Route>

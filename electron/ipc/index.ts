@@ -11,6 +11,7 @@ import { registerAdjustmentIpc } from "./adjustment.ipc";
 import { registerBillIpc } from "./bill.ipc";
 import { registerPaymentIpc } from "./payment.ipc";
 import { registerExpenseIpc } from "./expense.ipc";
+import { registerReportIpc } from "./report.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -26,4 +27,5 @@ export function registerAllIpc() {
   registerBillIpc();
   registerPaymentIpc();
   registerExpenseIpc();
+  registerReportIpc();
 }

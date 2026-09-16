@@ -114,7 +114,7 @@ const api: AppApi = {
     update: (input) => ipcRenderer.invoke("expense:update", input),
     delete: (id) => ipcRenderer.invoke("expense:delete", id),
   },
-    companyPayment: {
+  companyPayment: {
     list: (query) => ipcRenderer.invoke("companyPayment:list", query ?? {}),
     get: (id) => ipcRenderer.invoke("companyPayment:get", id),
     getAllocations: (id) =>
@@ -123,6 +123,10 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("companyPayment:delete", id),
     totalOutstanding: () =>
       ipcRenderer.invoke("companyPayment:totalOutstanding"),
+  },
+    report: {
+    full: (query) => ipcRenderer.invoke("report:full", query ?? {}),
+    today: () => ipcRenderer.invoke("report:today"),
   },
 };
 
