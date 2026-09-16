@@ -87,11 +87,13 @@ const api: AppApi = {
     get: (id) => ipcRenderer.invoke("adjustment:get", id),
     create: (input) => ipcRenderer.invoke("adjustment:create", input),
   },
-  bill: {
+    bill: {
     list: (query) => ipcRenderer.invoke("bill:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("bill:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("bill:get", id),
     create: (input) => ipcRenderer.invoke("bill:create", input),
+    finalize: (id) => ipcRenderer.invoke("bill:finalize", id),
+    deleteDraft: (id) => ipcRenderer.invoke("bill:deleteDraft", id),
   },
   payment: {
     list: (query) => ipcRenderer.invoke("payment:list", query ?? {}),

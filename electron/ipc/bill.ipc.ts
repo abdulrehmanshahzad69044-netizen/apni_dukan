@@ -26,4 +26,13 @@ export function registerBillIpc() {
     const input = createBillSchema.parse(rawInput);
     return billService.create(input);
   });
+
+  ipcMain.handle("bill:finalize", async (_e, id: number) => {
+    return billService.finalize(id);
+  });
+
+  ipcMain.handle("bill:deleteDraft", async (_e, id: number) => {
+    await billService.deleteDraft(id);
+    return { ok: true };
+  });
 }

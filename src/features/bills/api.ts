@@ -27,4 +27,12 @@ export const billApi = {
   async create(input: CreateBillInput): Promise<BillDetail> {
     return window.api.bill.create(input);
   },
+
+  async finalize(id: number): Promise<BillDetail> {
+    return window.api.bill.finalize(id);
+  },
+
+  async deleteDraft(id: number): Promise<void> {
+    await window.api.bill.deleteDraft(id);
+  },
 };

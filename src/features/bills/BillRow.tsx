@@ -28,21 +28,32 @@ export function BillRow({ bill, onClick }: Props) {
   const isDraft = bill.status === "draft";
   const isHeld = bill.status === "held";
   const isFinalized = bill.status === "finalized";
+  const isDraftish = isDraft || isHeld;
 
   return (
     <button
       onClick={onClick}
-      className="w-full text-left rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 hover:shadow-sm transition-shadow"
+      className={`w-full text-left rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 hover:shadow-sm transition-shadow ${
+        isHeld ? "border-blue-500/40" : isDraft ? "border-gray-500/40" : ""
+      }`}
     >
       <div
         className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-          isDraft || isHeld
+          isHeld
             ? "bg-blue-500/15"
+            : isDraft
+            ? "bg-gray-500/15"
             : "bg-[rgb(var(--muted))]"
         }`}
       >
-        {isDraft || isHeld ? (
-          <Pencil className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        {isDraftish ? (
+          <Pencil
+            className={`w-5 h-5 ${
+              isHeld
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-gray-600 dark:text-gray-400"
+            }`}
+          />
         ) : (
           <Receipt className="w-5 h-5 text-[rgb(var(--muted-fg))]" />
         )}

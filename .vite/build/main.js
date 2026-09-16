@@ -12070,42 +12070,37 @@ function toBillDto(row) {
     updatedAt: Math.floor(row.updatedAt.getTime() / 1e3)
   };
 }
+function computeTotal(lines) {
+  return lines.reduce(
+    (sum, line) => sum + Math.round(line.quantity * line.unitPrice / 1e3),
+    0
+  );
+}
 const billService = {
   /**
-   * Create a bill with FIFO consumption.
+   * Create a bill.
    *
-   * Steps inside ONE transaction:
-   *  1. Generate bill number
-   *  2. Compute total from lines
-   *  3. Insert bill header
-   *  4. For each line:
-   *     a. FIFO-consume oldest batches
-   *     b. Update batch.remainingQuantity
-   *     c. Insert bill_items (with lineCogs computed)
-   *     d. Insert bill_item_fifo rows (traceability)
-   *     e. Insert stock_ledger entries
-   *  5. Update bill totals (totalAmount, cogs, remaining)
-   *  6. Update customer cachedOutstanding (if customer set + remaining > 0)
-   *
-   * Stock goes down. Cost is captured exactly. Nothing is guessed.
+   * - If status is "finalized": run full FIFO consumption, update batches,
+   *   write ledger, update customer balance.
+   * - If status is "draft" or "held": skip all business-side effects. Just
+   *   save the header + items (so we can reload + edit later). No stock change,
+   *   no Khaata.
    */
   async create(input) {
     const db = getDb();
-    const totalAmount = input.lines.reduce(
-      (sum, line) => sum + Math.round(line.quantity * line.unitPrice / 1e3),
-      0
-    );
+    const totalAmount = computeTotal(input.lines);
     const billDate = input.billDate ?? /* @__PURE__ */ new Date();
     const billNumber = await generateBillNumber();
     const paidAmount = input.paidAmount ?? 0;
     const status = input.status ?? "finalized";
+    const isDraftish = status === "draft" || status === "held";
     const billId = db.transaction((tx) => {
       const [bill] = tx.insert(bills).values({
         billNumber,
         customerId: input.customerId ?? null,
         billDate,
         totalAmount,
-        paidAmount,
+        paidAmount: isDraftish ? 0 : paidAmount,
         remainingAmount: 0,
         cogs: 0,
         status,
@@ -12113,21 +12108,6 @@ const billService = {
       }).returning({ id: bills.id }).all();
       let totalCogs = 0;
       for (const line of input.lines) {
-        const availableBatches = tx.select().from(stockBatches).where(
-          and(
-            eq(stockBatches.variantId, line.variantId),
-            sql`${stockBatches.remainingQuantity} > 0`
-          )
-        ).orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id)).all();
-        const totalAvailable = availableBatches.reduce(
-          (sum, b) => sum + b.remainingQuantity,
-          0
-        );
-        if (totalAvailable < line.quantity) {
-          throw new Error(
-            `Not enough stock for variant ${line.variantId}. Available: ${(totalAvailable / 1e3).toFixed(3)}, requested: ${(line.quantity / 1e3).toFixed(3)}`
-          );
-        }
         const lineTotal = Math.round(
           line.quantity * line.unitPrice / 1e3
         );
@@ -12139,9 +12119,109 @@ const billService = {
           unitPrice: line.unitPrice,
           lineTotal,
           lineCogs: 0
-          // update after FIFO
         }).returning({ id: billItems.id }).all();
-        let remaining = line.quantity;
+        if (!isDraftish) {
+          const availableBatches = tx.select().from(stockBatches).where(
+            and(
+              eq(stockBatches.variantId, line.variantId),
+              sql`${stockBatches.remainingQuantity} > 0`
+            )
+          ).orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id)).all();
+          const totalAvailable = availableBatches.reduce(
+            (sum, b) => sum + b.remainingQuantity,
+            0
+          );
+          if (totalAvailable < line.quantity) {
+            throw new Error(
+              `Not enough stock for variant ${line.variantId}. Available: ${(totalAvailable / 1e3).toFixed(3)}, requested: ${(line.quantity / 1e3).toFixed(3)}`
+            );
+          }
+          let remaining = line.quantity;
+          let lineCogs = 0;
+          for (const batch of availableBatches) {
+            if (remaining <= 0) break;
+            const consume = Math.min(remaining, batch.remainingQuantity);
+            remaining -= consume;
+            const costContribution = Math.round(
+              consume * batch.purchasePrice / 1e3
+            );
+            lineCogs += costContribution;
+            tx.update(stockBatches).set({ remainingQuantity: batch.remainingQuantity - consume }).where(eq(stockBatches.id, batch.id)).run();
+            tx.insert(billItemFifo).values({
+              billItemId: item.id,
+              batchId: batch.id,
+              quantityConsumed: consume,
+              unitCost: batch.purchasePrice
+            }).run();
+            tx.insert(stockLedger).values({
+              batchId: batch.id,
+              variantId: line.variantId,
+              quantityChange: -consume,
+              unitCost: batch.purchasePrice,
+              movementType: "sale",
+              referenceType: "bill",
+              referenceId: bill.id,
+              notes: null
+            }).run();
+          }
+          tx.update(billItems).set({ lineCogs }).where(eq(billItems.id, item.id)).run();
+          totalCogs += lineCogs;
+        }
+      }
+      const remainingAmount = isDraftish ? 0 : totalAmount - paidAmount;
+      tx.update(bills).set({
+        cogs: totalCogs,
+        remainingAmount,
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq(bills.id, bill.id)).run();
+      if (!isDraftish && input.customerId && remainingAmount > 0) {
+        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, input.customerId)).limit(1).all();
+        if (cust) {
+          tx.update(customers).set({
+            cachedOutstanding: cust.cachedOutstanding + remainingAmount,
+            updatedAt: /* @__PURE__ */ new Date()
+          }).where(eq(customers.id, input.customerId)).run();
+        }
+      }
+      return bill.id;
+    });
+    const created = await this.getById(billId);
+    if (!created) throw new Error("Failed to load created bill");
+    return created;
+  },
+  /**
+   * Finalize a draft or held bill. Runs the FIFO consumption NOW (using
+   * current stock), then updates balances.
+   *
+   * Throws if the bill is not a draft or held, or if stock is insufficient.
+   */
+  async finalize(billId) {
+    const db = getDb();
+    const [bill] = await db.select().from(bills).where(eq(bills.id, billId)).limit(1);
+    if (!bill) throw new Error(`Bill ${billId} not found`);
+    if (bill.status !== "draft" && bill.status !== "held") {
+      throw new Error(`Only draft or held bills can be finalized`);
+    }
+    const items = await db.select().from(billItems).where(eq(billItems.billId, billId)).orderBy(asc(billItems.id));
+    db.transaction((tx) => {
+      let totalCogs = 0;
+      for (const item of items) {
+        const availableBatches = tx.select().from(stockBatches).where(
+          and(
+            eq(stockBatches.variantId, item.variantId),
+            sql`${stockBatches.remainingQuantity} > 0`
+          )
+        ).orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id)).all();
+        const totalAvailable = availableBatches.reduce(
+          (sum, b) => sum + b.remainingQuantity,
+          0
+        );
+        if (totalAvailable < item.quantity) {
+          throw new Error(
+            `Not enough stock for variant ${item.variantId}. Available: ${(totalAvailable / 1e3).toFixed(3)}, requested: ${(item.quantity / 1e3).toFixed(3)}`
+          );
+        }
+        let remaining = item.quantity;
         let lineCogs = 0;
         for (const batch of availableBatches) {
           if (remaining <= 0) break;
@@ -12160,38 +12240,51 @@ const billService = {
           }).run();
           tx.insert(stockLedger).values({
             batchId: batch.id,
-            variantId: line.variantId,
+            variantId: item.variantId,
             quantityChange: -consume,
             unitCost: batch.purchasePrice,
             movementType: "sale",
             referenceType: "bill",
-            referenceId: bill.id,
+            referenceId: billId,
             notes: null
           }).run();
         }
         tx.update(billItems).set({ lineCogs }).where(eq(billItems.id, item.id)).run();
         totalCogs += lineCogs;
       }
-      const remainingAmount = totalAmount - paidAmount;
+      const remainingAmount = bill.totalAmount - bill.paidAmount;
       tx.update(bills).set({
+        status: "finalized",
         cogs: totalCogs,
         remainingAmount,
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq(bills.id, bill.id)).run();
-      if (input.customerId && remainingAmount > 0 && status === "finalized") {
-        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, input.customerId)).limit(1).all();
+      }).where(eq(bills.id, billId)).run();
+      if (bill.customerId && remainingAmount > 0) {
+        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, bill.customerId)).limit(1).all();
         if (cust) {
           tx.update(customers).set({
             cachedOutstanding: cust.cachedOutstanding + remainingAmount,
             updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq(customers.id, input.customerId)).run();
+          }).where(eq(customers.id, bill.customerId)).run();
         }
       }
-      return bill.id;
     });
-    const created = await this.getById(billId);
-    if (!created) throw new Error("Failed to load created bill");
-    return created;
+    const updated = await this.getById(billId);
+    if (!updated) throw new Error("Failed to load finalized bill");
+    return updated;
+  },
+  /**
+   * Delete a draft or held bill. Doesn't touch inventory (nothing to
+   * restore). Finalized bills cannot be deleted.
+   */
+  async deleteDraft(billId) {
+    const db = getDb();
+    const [bill] = await db.select().from(bills).where(eq(bills.id, billId)).limit(1);
+    if (!bill) throw new Error(`Bill ${billId} not found`);
+    if (bill.status !== "draft" && bill.status !== "held") {
+      throw new Error(`Only draft or held bills can be deleted`);
+    }
+    await db.delete(bills).where(eq(bills.id, billId));
   },
   async getById(id) {
     const db = getDb();
@@ -12290,6 +12383,14 @@ const billService = {
         or(like(bills.billNumber, term), like(sql`c.name`, term))
       );
     }
+    const statusOrder = sql`CASE ${bills.status}
+      WHEN 'held' THEN 0
+      WHEN 'draft' THEN 1
+      WHEN 'finalized' THEN 2
+      WHEN 'returned' THEN 3
+      WHEN 'cancelled' THEN 4
+      ELSE 5
+    END`;
     const rows = await db.select({
       id: bills.id,
       billNumber: bills.billNumber,
@@ -12305,7 +12406,7 @@ const billService = {
       itemCount: sql`(SELECT COUNT(*) FROM bill_items WHERE bill_id = ${bills.id})`,
       createdAt: bills.createdAt,
       updatedAt: bills.updatedAt
-    }).from(bills).leftJoin(sql`customers c`, sql`c.id = ${bills.customerId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(bills.billDate), desc(bills.id)).limit(query.limit).offset(query.offset);
+    }).from(bills).leftJoin(sql`customers c`, sql`c.id = ${bills.customerId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(statusOrder), desc(bills.billDate), desc(bills.id)).limit(query.limit).offset(query.offset);
     return rows.map(toBillDto);
   },
   async count(query) {
@@ -12368,6 +12469,13 @@ function registerBillIpc() {
   require$$3$1.ipcMain.handle("bill:create", async (_e, rawInput) => {
     const input = createBillSchema.parse(rawInput);
     return billService.create(input);
+  });
+  require$$3$1.ipcMain.handle("bill:finalize", async (_e, id) => {
+    return billService.finalize(id);
+  });
+  require$$3$1.ipcMain.handle("bill:deleteDraft", async (_e, id) => {
+    await billService.deleteDraft(id);
+    return { ok: true };
   });
 }
 function toPaymentDto(row) {

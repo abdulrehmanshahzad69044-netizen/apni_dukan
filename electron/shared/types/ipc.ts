@@ -196,7 +196,7 @@ export type AppApi = {
     get: (id: number) => Promise<StockAdjustment | null>;
     create: (input: CreateAdjustmentInput) => Promise<StockAdjustment>;
   };
-  bill: {
+    bill: {
     list: (query?: Partial<BillListQuery>) => Promise<Bill[]>;
     count: (
       query?: Pick<
@@ -206,6 +206,8 @@ export type AppApi = {
     ) => Promise<number>;
     get: (id: number) => Promise<BillDetail | null>;
     create: (input: CreateBillInput) => Promise<BillDetail>;
+    finalize: (id: number) => Promise<BillDetail>;
+    deleteDraft: (id: number) => Promise<{ ok: true }>;
   };
   payment: {
     list: (query?: Partial<PaymentListQuery>) => Promise<Payment[]>;
