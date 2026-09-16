@@ -241,13 +241,23 @@ export type AppApi = {
     update: (input: UpdateExpenseInput) => Promise<Expense>;
     delete: (id: number) => Promise<{ ok: true }>;
   };
-  companyPayment: {
+    companyPayment: {
     list: (
       query?: Partial<CompanyPaymentListQuery>
     ) => Promise<CompanyPayment[]>;
     get: (id: number) => Promise<CompanyPayment | null>;
+    getAllocations: (id: number) => Promise<
+      Array<{
+        id: number;
+        purchaseId: number;
+        purchaseNumber: string;
+        purchaseDate: number;
+        amount: number;
+      }>
+    >;
     create: (input: CreateCompanyPaymentInput) => Promise<CompanyPayment>;
     delete: (id: number) => Promise<{ ok: true }>;
+    totalOutstanding: () => Promise<number>;
   };
 };
 

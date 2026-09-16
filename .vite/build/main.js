@@ -5866,6 +5866,35 @@ const companyPaymentsRelations = relations(
     })
   })
 );
+const companyPaymentAllocations = sqliteTable(
+  "company_payment_allocations",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    companyPaymentId: integer$1("company_payment_id").notNull().references(() => companyPayments.id, { onDelete: "cascade" }),
+    purchaseId: integer$1("purchase_id").notNull().references(() => purchases.id),
+    amount: money("amount").notNull(),
+    ...timestamps
+  },
+  (t) => ({
+    paymentIdx: index("company_payment_alloc_payment_idx").on(
+      t.companyPaymentId
+    ),
+    purchaseIdx: index("company_payment_alloc_purchase_idx").on(t.purchaseId)
+  })
+);
+const companyPaymentAllocationsRelations = relations(
+  companyPaymentAllocations,
+  ({ one }) => ({
+    companyPayment: one(companyPayments, {
+      fields: [companyPaymentAllocations.companyPaymentId],
+      references: [companyPayments.id]
+    }),
+    purchase: one(purchases, {
+      fields: [companyPaymentAllocations.purchaseId],
+      references: [purchases.id]
+    })
+  })
+);
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   billItemFifo,
@@ -5878,6 +5907,8 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   categoriesRelations,
   companies,
   companiesRelations,
+  companyPaymentAllocations,
+  companyPaymentAllocationsRelations,
   companyPayments,
   companyPaymentsRelations,
   customers,
@@ -11595,7 +11626,14 @@ const purchaseService = {
     return updated;
   }
 };
-object({
+const optionalTrimmedString$2 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+  if (v === null || v === void 0) return void 0;
+  const t = v.trim();
+  if (t === "") return void 0;
+  if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+  return t;
+});
+const purchaseLineSchema = object({
   variantId: number().int().positive(),
   quantity: number().int().positive("Quantity must be positive"),
   purchasePrice: number().int().nonnegative("Price cannot be negative"),
@@ -11606,15 +11644,11 @@ const createPurchaseSchema = object({
   companyId: number().int().positive(),
   purchaseDate: date().optional(),
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: union([string(), _null(), _undefined()]).transform((v) => {
-    if (v === null || v === void 0) return void 0;
-    const t = v.trim();
-    return t === "" ? void 0 : t;
-  })
+  remarks: optionalTrimmedString$2(500),
+  lines: array(purchaseLineSchema).min(1, "Add at least one line")
 });
 const purchaseListQuerySchema = object({
   search: string().trim().optional(),
-  // searches purchase number / company name
   companyId: number().int().positive().optional(),
   fromDate: date().optional(),
   toDate: date().optional(),
@@ -12912,10 +12946,7 @@ const companyPaymentService = {
     if (query.search) {
       const term = `%${query.search}%`;
       conditions.push(
-        or(
-          like(sql`c.name`, term),
-          like(sql`pur.purchase_number`, term)
-        )
+        or(like(sql`c.name`, term), like(sql`pur.purchase_number`, term))
       );
     }
     const rows = await db.select({
@@ -12947,9 +12978,38 @@ const companyPaymentService = {
     return rows[0] ? toDto(rows[0]) : null;
   },
   /**
+   * Get allocations for a payment (which purchases it was applied to).
+   */
+  async getAllocations(paymentId) {
+    const db = getDb();
+    const rows = await db.select({
+      id: companyPaymentAllocations.id,
+      purchaseId: companyPaymentAllocations.purchaseId,
+      purchaseNumber: sql`p.purchase_number`,
+      purchaseDate: sql`p.purchase_date`,
+      amount: companyPaymentAllocations.amount
+    }).from(companyPaymentAllocations).innerJoin(
+      sql`purchases p`,
+      sql`p.id = ${companyPaymentAllocations.purchaseId}`
+    ).where(eq(companyPaymentAllocations.companyPaymentId, paymentId)).orderBy(asc(sql`p.purchase_date`));
+    return rows.map((r) => ({
+      id: r.id,
+      purchaseId: r.purchaseId,
+      purchaseNumber: r.purchaseNumber,
+      purchaseDate: Math.floor(
+        typeof r.purchaseDate === "object" ? r.purchaseDate.getTime() / 1e3 : Number(r.purchaseDate)
+      ),
+      amount: r.amount
+    }));
+  },
+  /**
    * Record a payment to a company.
-   * Optionally applies it to a specific purchase (updates purchase.paidAmount).
-   * If no purchase specified, it's a general payment on account.
+   *
+   * - If purchaseId is set → allocate ONLY to that purchase.
+   * - If purchaseId is null  → FIFO allocate across unpaid purchases (oldest first).
+   *
+   * Every allocation updates the corresponding purchase's paidAmount.
+   * Everything runs in ONE transaction.
    */
   async create(input) {
     const db = getDb();
@@ -12963,13 +13023,50 @@ const companyPaymentService = {
         remarks: input.remarks ?? null
       }).returning({ id: companyPayments.id }).all();
       if (input.purchaseId) {
-        const [pur] = tx.select({ paidAmount: purchases.paidAmount, totalAmount: purchases.totalAmount }).from(purchases).where(eq(purchases.id, input.purchaseId)).limit(1).all();
+        const [pur] = tx.select().from(purchases).where(eq(purchases.id, input.purchaseId)).limit(1).all();
         if (!pur) throw new Error(`Purchase ${input.purchaseId} not found`);
-        const newPaid = Math.min(
-          pur.paidAmount + input.amount,
-          pur.totalAmount
-        );
-        tx.update(purchases).set({ paidAmount: newPaid, updatedAt: /* @__PURE__ */ new Date() }).where(eq(purchases.id, input.purchaseId)).run();
+        const outstanding = pur.totalAmount - pur.paidAmount;
+        const allocate = Math.min(input.amount, outstanding);
+        if (allocate > 0) {
+          tx.insert(companyPaymentAllocations).values({
+            companyPaymentId: payment.id,
+            purchaseId: pur.id,
+            amount: allocate
+          }).run();
+          tx.update(purchases).set({
+            paidAmount: pur.paidAmount + allocate,
+            updatedAt: /* @__PURE__ */ new Date()
+          }).where(eq(purchases.id, pur.id)).run();
+        }
+      } else {
+        const unpaidPurchases = tx.select().from(purchases).where(
+          and(
+            eq(purchases.companyId, input.companyId),
+            sql`${purchases.paidAmount} < ${purchases.totalAmount}`
+          )
+        ).orderBy(asc(purchases.purchaseDate), asc(purchases.id)).all();
+        let remaining = input.amount;
+        for (const pur of unpaidPurchases) {
+          if (remaining <= 0) break;
+          const outstanding = pur.totalAmount - pur.paidAmount;
+          const allocate = Math.min(remaining, outstanding);
+          remaining -= allocate;
+          if (allocate <= 0) continue;
+          tx.insert(companyPaymentAllocations).values({
+            companyPaymentId: payment.id,
+            purchaseId: pur.id,
+            amount: allocate
+          }).run();
+          tx.update(purchases).set({
+            paidAmount: pur.paidAmount + allocate,
+            updatedAt: /* @__PURE__ */ new Date()
+          }).where(eq(purchases.id, pur.id)).run();
+        }
+        if (remaining > 0) {
+          throw new Error(
+            `Payment exceeds total outstanding by Rs. ${(remaining / 100).toFixed(2)}. Please reduce the amount.`
+          );
+        }
       }
       return payment.id;
     });
@@ -12982,15 +13079,28 @@ const companyPaymentService = {
     await db.delete(companyPayments).where(eq(companyPayments.id, id));
   },
   /**
-   * Total company payments within a date range (for dashboard/reports).
+   * Total company payments within a date range.
    */
   async totalInRange(fromDate, toDate) {
     const db = getDb();
     const [row] = await db.select({
       total: sql`COALESCE(SUM(${companyPayments.amount}), 0)`
     }).from(companyPayments).where(
-      and(gte(companyPayments.date, fromDate), lte(companyPayments.date, toDate))
+      and(
+        gte(companyPayments.date, fromDate),
+        lte(companyPayments.date, toDate)
+      )
     );
+    return row?.total ?? 0;
+  },
+  /**
+   * Total outstanding across ALL companies.
+   */
+  async totalOutstanding() {
+    const db = getDb();
+    const [row] = await db.select({
+      total: sql`COALESCE(SUM(${purchases.totalAmount} - ${purchases.paidAmount}), 0)`
+    }).from(purchases);
     return row?.total ?? 0;
   }
 };
@@ -13065,6 +13175,9 @@ function registerExpenseIpc() {
   require$$3$1.ipcMain.handle("companyPayment:get", async (_e, id) => {
     return companyPaymentService.getById(id);
   });
+  require$$3$1.ipcMain.handle("companyPayment:getAllocations", async (_e, id) => {
+    return companyPaymentService.getAllocations(id);
+  });
   require$$3$1.ipcMain.handle("companyPayment:create", async (_e, rawInput) => {
     const input = createCompanyPaymentSchema.parse(rawInput);
     return companyPaymentService.create(input);
@@ -13072,6 +13185,9 @@ function registerExpenseIpc() {
   require$$3$1.ipcMain.handle("companyPayment:delete", async (_e, id) => {
     await companyPaymentService.remove(id);
     return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("companyPayment:totalOutstanding", async () => {
+    return companyPaymentService.totalOutstanding();
   });
 }
 function registerAllIpc() {

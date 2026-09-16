@@ -20,6 +20,7 @@ import { KhaataPage } from "@/features/khaata/KhaataPage";
 import { KhaataDetailPage } from "@/features/khaata/KhaataDetailPage";
 import { PaymentsPage } from "@/features/payments/PaymentsPage";
 import { ExpensesPage } from "@/features/expenses/ExpensesPage";
+import { CompanyPaymentsPage } from "@/features/company-payments/CompanyPaymentsPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -53,6 +54,7 @@ export function AppRouter() {
         <Route path="khaata" element={<KhaataPage />} />
         <Route path="khaata/:customerId" element={<KhaataDetailPage />} />
         <Route path="payments" element={<PaymentsPage />} />
+        <Route path="company-payments" element={<CompanyPaymentsPage />} />
 
         {/* Expenses */}
         <Route path="expenses" element={<ExpensesPage />} />

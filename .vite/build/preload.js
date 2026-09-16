@@ -113,8 +113,10 @@ const api = {
   companyPayment: {
     list: (query) => electron.ipcRenderer.invoke("companyPayment:list", query ?? {}),
     get: (id) => electron.ipcRenderer.invoke("companyPayment:get", id),
+    getAllocations: (id) => electron.ipcRenderer.invoke("companyPayment:getAllocations", id),
     create: (input) => electron.ipcRenderer.invoke("companyPayment:create", input),
-    delete: (id) => electron.ipcRenderer.invoke("companyPayment:delete", id)
+    delete: (id) => electron.ipcRenderer.invoke("companyPayment:delete", id),
+    totalOutstanding: () => electron.ipcRenderer.invoke("companyPayment:totalOutstanding")
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

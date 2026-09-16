@@ -27,3 +27,4 @@ export * from "./payment-allocations";
 // Phase 5 — Expenses
 export * from "./expenses";
 export * from "./company-payments";
+export * from "./company-payment-allocations";

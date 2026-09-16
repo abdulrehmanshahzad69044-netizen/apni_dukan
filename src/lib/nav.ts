@@ -16,6 +16,7 @@ import {
   Layers,
   Truck,
   ClipboardList,
+  HandCoins,
 } from "lucide-react";
 
 export type NavItem = {
@@ -40,6 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Companies", to: "/companies", icon: Building2 },
   { label: "Khaata", to: "/khaata", icon: BookOpen },
   { label: "Payments", to: "/payments", icon: Wallet },
+  { label: "Company Payments", to: "/company-payments", icon: HandCoins },
   { label: "Expenses", to: "/expenses", icon: TrendingDown },
   { label: "Reports", to: "/reports", icon: BarChart3 },
   { label: "Settings", to: "/settings", icon: Settings },

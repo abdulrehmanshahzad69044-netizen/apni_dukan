@@ -33,13 +33,23 @@ export type StockBatch = {
   purchaseDate: number;
 };
 
-// ---------- Purchase Line (input) ----------
+// ---------- Shared optional-string helper ----------
 
 /**
- * Input shape for one line in a purchase.
- * All prices are in paisa, quantities in milli-units.
- * The UI layer converts user input before sending.
+ * Bulletproof optional string: accepts string | null | undefined,
+ * trims, converts empty/null/undefined → undefined.
  */
+const optionalTrimmedString = (max: number) =>
+  z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
+    if (v === null || v === undefined) return undefined;
+    const t = v.trim();
+    if (t === "") return undefined;
+    if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+    return t;
+  });
+
+// ---------- Purchase Line ----------
+
 export const purchaseLineSchema = z.object({
   variantId: z.number().int().positive(),
   quantity: z.number().int().positive("Quantity must be positive"),
@@ -50,23 +60,22 @@ export const purchaseLineSchema = z.object({
 
 export type PurchaseLineInput = z.infer<typeof purchaseLineSchema>;
 
+// ---------- Create Purchase ----------
+
 export const createPurchaseSchema = z.object({
   companyId: z.number().int().positive(),
   purchaseDate: z.coerce.date().optional(),
   paidAmount: z.number().int().nonnegative().optional().default(0),
-  remarks: z
-  .union([z.string(), z.null(), z.undefined()])
-  .transform((v) => {
-    if (v === null || v === undefined) return undefined;
-    const t = v.trim();
-    return t === "" ? undefined : t;
-  }),
+  remarks: optionalTrimmedString(500),
+  lines: z.array(purchaseLineSchema).min(1, "Add at least one line"),
 });
 
 export type CreatePurchaseInput = z.infer<typeof createPurchaseSchema>;
 
+// ---------- List Query ----------
+
 export const purchaseListQuerySchema = z.object({
-  search: z.string().trim().optional(), // searches purchase number / company name
+  search: z.string().trim().optional(),
   companyId: z.number().int().positive().optional(),
   fromDate: z.coerce.date().optional(),
   toDate: z.coerce.date().optional(),

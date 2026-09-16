@@ -52,6 +52,10 @@ export function registerExpenseIpc() {
     return companyPaymentService.getById(id);
   });
 
+  ipcMain.handle("companyPayment:getAllocations", async (_e, id: number) => {
+    return companyPaymentService.getAllocations(id);
+  });
+
   ipcMain.handle("companyPayment:create", async (_e, rawInput: unknown) => {
     const input = createCompanyPaymentSchema.parse(rawInput);
     return companyPaymentService.create(input);
@@ -60,5 +64,9 @@ export function registerExpenseIpc() {
   ipcMain.handle("companyPayment:delete", async (_e, id: number) => {
     await companyPaymentService.remove(id);
     return { ok: true };
+  });
+
+  ipcMain.handle("companyPayment:totalOutstanding", async () => {
+    return companyPaymentService.totalOutstanding();
   });
 }

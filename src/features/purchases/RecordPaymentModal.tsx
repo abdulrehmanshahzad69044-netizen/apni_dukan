@@ -9,7 +9,7 @@ import {
   rupeesToPaisa,
   paisaToRupees,
 } from "@/lib/format";
-import { purchaseApi } from "./api";
+import { companyPaymentApi } from "../company-payments/api";
 import type { Purchase } from "../../../electron/shared/types/purchase";
 
 type Props = {
@@ -21,6 +21,7 @@ type Props = {
 
 export function RecordPaymentModal({ open, onClose, onSaved, purchase }: Props) {
   const [amount, setAmount] = useState("");
+  const [remarks, setRemarks] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +30,7 @@ export function RecordPaymentModal({ open, onClose, onSaved, purchase }: Props) 
   useEffect(() => {
     if (open) {
       setAmount(String(paisaToRupees(outstanding)));
+      setRemarks("");
       setError(null);
     }
   }, [open, outstanding]);
@@ -48,10 +50,12 @@ export function RecordPaymentModal({ open, onClose, onSaved, purchase }: Props) 
     setSaving(true);
     setError(null);
     try {
-      await purchaseApi.setPaidAmount(
-        purchase.id,
-        purchase.paidAmount + paying
-      );
+      await companyPaymentApi.create({
+        companyId: purchase.companyId,
+        purchaseId: purchase.id,
+        amount: paying,
+        remarks: remarks.trim() || "",
+      });
       toast.success("Payment recorded");
       onSaved();
       onClose();
@@ -124,6 +128,16 @@ export function RecordPaymentModal({ open, onClose, onSaved, purchase }: Props) 
           <p className="text-xs text-[rgb(var(--muted-fg))]">
             Pre-filled with the full outstanding. Edit to pay a partial amount.
           </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="payment-remarks">Remarks</Label>
+          <Input
+            id="payment-remarks"
+            placeholder="Optional"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+          />
         </div>
 
         {error && <p className="text-xs text-red-600">{error}</p>}
