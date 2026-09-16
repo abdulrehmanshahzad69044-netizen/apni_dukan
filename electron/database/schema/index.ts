@@ -20,6 +20,10 @@ export * from "./bills";
 export * from "./bill-items";
 export * from "./bill-item-fifo";
 
-// Phase 4 — Payments (tables created now, service in Phase 4)
+// Phase 4 — Payments
 export * from "./payments";
 export * from "./payment-allocations";
+
+// Phase 5 — Expenses
+export * from "./expenses";
+export * from "./company-payments";

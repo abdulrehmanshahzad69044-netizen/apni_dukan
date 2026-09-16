@@ -5822,6 +5822,50 @@ const billsRelations = relations(bills, ({ one, many }) => ({
   items: many(billItems),
   payments: many(payments)
 }));
+const expenses = sqliteTable(
+  "expenses",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    amount: money("amount").notNull(),
+    date: integer$1("date", { mode: "timestamp" }).notNull(),
+    remarks: text("remarks"),
+    ...timestamps
+  },
+  (t) => ({
+    dateIdx: index("expenses_date_idx").on(t.date),
+    nameIdx: index("expenses_name_idx").on(t.name)
+  })
+);
+const companyPayments = sqliteTable(
+  "company_payments",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    companyId: integer$1("company_id").notNull().references(() => companies.id),
+    purchaseId: integer$1("purchase_id").references(() => purchases.id),
+    amount: money("amount").notNull(),
+    date: integer$1("date", { mode: "timestamp" }).notNull(),
+    remarks: text("remarks"),
+    ...timestamps
+  },
+  (t) => ({
+    companyIdx: index("company_payments_company_idx").on(t.companyId),
+    dateIdx: index("company_payments_date_idx").on(t.date)
+  })
+);
+const companyPaymentsRelations = relations(
+  companyPayments,
+  ({ one }) => ({
+    company: one(companies, {
+      fields: [companyPayments.companyId],
+      references: [companies.id]
+    }),
+    purchase: one(purchases, {
+      fields: [companyPayments.purchaseId],
+      references: [purchases.id]
+    })
+  })
+);
 const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   billItemFifo,
@@ -5834,8 +5878,11 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   categoriesRelations,
   companies,
   companiesRelations,
+  companyPayments,
+  companyPaymentsRelations,
   customers,
   customersRelations,
+  expenses,
   money,
   paymentAllocations,
   paymentAllocationsRelations,
@@ -5942,7 +5989,7 @@ function registerAppIpc() {
     }
   );
 }
-function toDto$5(row) {
+function toDto$7(row) {
   return {
     id: row.id,
     name: row.name,
@@ -5971,12 +6018,12 @@ const customerService = {
       );
     }
     const rows = await db.select().from(customers).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(customers.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$5);
+    return rows.map(toDto$7);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
-    return rows[0] ? toDto$5(rows[0]) : null;
+    return rows[0] ? toDto$7(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -5985,7 +6032,7 @@ const customerService = {
       contactNumber: input.contactNumber ?? null,
       address: input.address ?? null
     }).returning();
-    return toDto$5(row);
+    return toDto$7(row);
   },
   async update(input) {
     const db = getDb();
@@ -6000,7 +6047,7 @@ const customerService = {
       updateValues.address = patch.address ?? null;
     const [row] = await db.update(customers).set(updateValues).where(eq(customers.id, id)).returning();
     if (!row) throw new Error(`Customer ${id} not found`);
-    return toDto$5(row);
+    return toDto$7(row);
   },
   /**
    * Soft delete. Never physically removes.
@@ -10607,7 +10654,7 @@ function registerCustomerIpc() {
     return { ok: true };
   });
 }
-function toDto$4(row) {
+function toDto$6(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10631,12 +10678,12 @@ const companyService = {
       );
     }
     const rows = await db.select().from(companies).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(companies.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$4);
+    return rows.map(toDto$6);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
-    return rows[0] ? toDto$4(rows[0]) : null;
+    return rows[0] ? toDto$6(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -10644,7 +10691,7 @@ const companyService = {
       name: input.name,
       contactNumber: input.contactNumber ?? null
     }).returning();
-    return toDto$4(row);
+    return toDto$6(row);
   },
   async update(input) {
     const db = getDb();
@@ -10655,7 +10702,7 @@ const companyService = {
       updateValues.contactNumber = patch.contactNumber ?? null;
     const [row] = await db.update(companies).set(updateValues).where(eq(companies.id, id)).returning();
     if (!row) throw new Error(`Company ${id} not found`);
-    return toDto$4(row);
+    return toDto$6(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -10721,7 +10768,7 @@ function registerCompanyIpc() {
     return { ok: true };
   });
 }
-function toDto$3(row) {
+function toDto$5(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10750,18 +10797,18 @@ const categoryService = {
       conditions.push(like(categories.name, `%${query.search}%`));
     }
     const rows = await db.select().from(categories).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(categories.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$3);
+    return rows.map(toDto$5);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
-    return rows[0] ? toDto$3(rows[0]) : null;
+    return rows[0] ? toDto$5(rows[0]) : null;
   },
   async create(input) {
     await assertNameAvailable(input.name);
     const db = getDb();
     const [row] = await db.insert(categories).values({ name: input.name }).returning();
-    return toDto$3(row);
+    return toDto$5(row);
   },
   async update(input) {
     if (input.name !== void 0) {
@@ -10772,7 +10819,7 @@ const categoryService = {
     if (input.name !== void 0) updateValues.name = input.name;
     const [row] = await db.update(categories).set(updateValues).where(eq(categories.id, input.id)).returning();
     if (!row) throw new Error(`Category ${input.id} not found`);
-    return toDto$3(row);
+    return toDto$5(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -11077,7 +11124,7 @@ function registerUnitIpc() {
     return { ok: true };
   });
 }
-function toDto$2(row) {
+function toDto$4(row) {
   return {
     id: row.id,
     name: row.name,
@@ -11119,12 +11166,12 @@ const productService = {
       conditions.push(eq(products.companyId, query.companyId));
     }
     const rows = await baseJoin$1(db.select(productSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(products.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$2);
+    return rows.map(toDto$4);
   },
   async getById(id) {
     const db = getDb();
     const rows = await baseJoin$1(db.select(productSelect)).where(eq(products.id, id)).limit(1);
-    return rows[0] ? toDto$2(rows[0]) : null;
+    return rows[0] ? toDto$4(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -11219,7 +11266,7 @@ function registerProductIpc() {
     return { ok: true };
   });
 }
-function toDto$1(row) {
+function toDto$3(row) {
   return {
     id: row.id,
     productId: row.productId,
@@ -11265,12 +11312,12 @@ const variantService = {
       );
     }
     const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(variants.productId), asc(variants.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$1);
+    return rows.map(toDto$3);
   },
   async getById(id) {
     const db = getDb();
     const rows = await baseJoin(db.select(variantSelect)).where(eq(variants.id, id)).limit(1);
-    return rows[0] ? toDto$1(rows[0]) : null;
+    return rows[0] ? toDto$3(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -11813,7 +11860,7 @@ function registerInventoryIpc() {
     return inventoryService.priceHistory(variantId);
   });
 }
-function toDto(row) {
+function toDto$2(row) {
   return {
     id: row.id,
     variantId: row.variantId,
@@ -11951,7 +11998,7 @@ const adjustmentService = {
       variantName: sql`v.name`,
       baseUnitShortName: sql`u.short_name`
     }).from(stockAdjustments).innerJoin(sql`variants v`, sql`v.id = ${stockAdjustments.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).where(eq(stockAdjustments.id, id)).limit(1);
-    return rows[0] ? toDto(rows[0]) : null;
+    return rows[0] ? toDto$2(rows[0]) : null;
   },
   async list(query) {
     const db = getDb();
@@ -11990,7 +12037,7 @@ const adjustmentService = {
       desc(stockAdjustments.adjustmentDate),
       desc(stockAdjustments.id)
     ).limit(query.limit).offset(query.offset);
-    return rows.map(toDto);
+    return rows.map(toDto$2);
   },
   /**
    * Count adjustments for a variant — useful for showing "N adjustments" on
@@ -12422,7 +12469,7 @@ const billService = {
     return row?.count ?? 0;
   }
 };
-const optionalTrimmedString = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+const optionalTrimmedString$1 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
   if (v === null || v === void 0) return void 0;
   const t = v.trim();
   if (t === "") return void 0;
@@ -12441,7 +12488,7 @@ const createBillSchema = object({
   customerId: number().int().positive().nullable().optional(),
   billDate: date().optional(),
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: optionalTrimmedString(500),
+  remarks: optionalTrimmedString$1(500),
   status: _enum(["draft", "held", "finalized"]).optional().default("finalized"),
   lines: array(billLineSchema).min(1, "Add at least one item")
 });
@@ -12759,6 +12806,274 @@ function registerPaymentIpc() {
     return khaataService.totalOutstanding();
   });
 }
+function toDto$1(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    amount: row.amount,
+    date: Math.floor(row.date.getTime() / 1e3),
+    remarks: row.remarks,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
+    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3)
+  };
+}
+const expenseService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.search) {
+      conditions.push(like(expenses.name, `%${query.search}%`));
+    }
+    if (query.fromDate) {
+      conditions.push(gte(expenses.date, query.fromDate));
+    }
+    if (query.toDate) {
+      conditions.push(lte(expenses.date, query.toDate));
+    }
+    const rows = await db.select().from(expenses).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(expenses.date), desc(expenses.id)).limit(query.limit).offset(query.offset);
+    return rows.map(toDto$1);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select().from(expenses).where(eq(expenses.id, id)).limit(1);
+    return rows[0] ? toDto$1(rows[0]) : null;
+  },
+  async create(input) {
+    const db = getDb();
+    const [row] = await db.insert(expenses).values({
+      name: input.name,
+      amount: input.amount,
+      date: input.date ?? /* @__PURE__ */ new Date(),
+      remarks: input.remarks ?? null
+    }).returning();
+    return toDto$1(row);
+  },
+  async update(input) {
+    const db = getDb();
+    const updateValues = { updatedAt: /* @__PURE__ */ new Date() };
+    if (input.name !== void 0) updateValues.name = input.name;
+    if (input.amount !== void 0) updateValues.amount = input.amount;
+    if (input.date !== void 0) updateValues.date = input.date;
+    if (input.remarks !== void 0)
+      updateValues.remarks = input.remarks ?? null;
+    const [row] = await db.update(expenses).set(updateValues).where(eq(expenses.id, input.id)).returning();
+    if (!row) throw new Error(`Expense ${input.id} not found`);
+    return toDto$1(row);
+  },
+  async remove(id) {
+    const db = getDb();
+    await db.delete(expenses).where(eq(expenses.id, id));
+  },
+  async count(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.search) conditions.push(like(expenses.name, `%${query.search}%`));
+    if (query.fromDate)
+      conditions.push(gte(expenses.date, query.fromDate));
+    if (query.toDate) conditions.push(lte(expenses.date, query.toDate));
+    const [row] = await db.select({ count: sql`count(*)` }).from(expenses).where(conditions.length > 0 ? and(...conditions) : void 0);
+    return row?.count ?? 0;
+  },
+  /**
+   * Total expenses within a date range (used for reports).
+   */
+  async totalInRange(fromDate, toDate) {
+    const db = getDb();
+    const [row] = await db.select({ total: sql`COALESCE(SUM(${expenses.amount}), 0)` }).from(expenses).where(and(gte(expenses.date, fromDate), lte(expenses.date, toDate)));
+    return row?.total ?? 0;
+  }
+};
+function toDto(row) {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    companyName: row.companyName,
+    purchaseId: row.purchaseId,
+    purchaseNumber: row.purchaseNumber,
+    amount: row.amount,
+    date: Math.floor(row.date.getTime() / 1e3),
+    remarks: row.remarks,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3)
+  };
+}
+const companyPaymentService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.companyId) {
+      conditions.push(eq(companyPayments.companyId, query.companyId));
+    }
+    if (query.fromDate) {
+      conditions.push(gte(companyPayments.date, query.fromDate));
+    }
+    if (query.toDate) {
+      conditions.push(lte(companyPayments.date, query.toDate));
+    }
+    if (query.search) {
+      const term = `%${query.search}%`;
+      conditions.push(
+        or(
+          like(sql`c.name`, term),
+          like(sql`pur.purchase_number`, term)
+        )
+      );
+    }
+    const rows = await db.select({
+      id: companyPayments.id,
+      companyId: companyPayments.companyId,
+      companyName: sql`c.name`,
+      purchaseId: companyPayments.purchaseId,
+      purchaseNumber: sql`pur.purchase_number`,
+      amount: companyPayments.amount,
+      date: companyPayments.date,
+      remarks: companyPayments.remarks,
+      createdAt: companyPayments.createdAt
+    }).from(companyPayments).innerJoin(sql`companies c`, sql`c.id = ${companyPayments.companyId}`).leftJoin(sql`purchases pur`, sql`pur.id = ${companyPayments.purchaseId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(companyPayments.date), desc(companyPayments.id)).limit(query.limit).offset(query.offset);
+    return rows.map(toDto);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select({
+      id: companyPayments.id,
+      companyId: companyPayments.companyId,
+      companyName: sql`c.name`,
+      purchaseId: companyPayments.purchaseId,
+      purchaseNumber: sql`pur.purchase_number`,
+      amount: companyPayments.amount,
+      date: companyPayments.date,
+      remarks: companyPayments.remarks,
+      createdAt: companyPayments.createdAt
+    }).from(companyPayments).innerJoin(sql`companies c`, sql`c.id = ${companyPayments.companyId}`).leftJoin(sql`purchases pur`, sql`pur.id = ${companyPayments.purchaseId}`).where(eq(companyPayments.id, id)).limit(1);
+    return rows[0] ? toDto(rows[0]) : null;
+  },
+  /**
+   * Record a payment to a company.
+   * Optionally applies it to a specific purchase (updates purchase.paidAmount).
+   * If no purchase specified, it's a general payment on account.
+   */
+  async create(input) {
+    const db = getDb();
+    const date2 = input.date ?? /* @__PURE__ */ new Date();
+    const insertedId = db.transaction((tx) => {
+      const [payment] = tx.insert(companyPayments).values({
+        companyId: input.companyId,
+        purchaseId: input.purchaseId ?? null,
+        amount: input.amount,
+        date: date2,
+        remarks: input.remarks ?? null
+      }).returning({ id: companyPayments.id }).all();
+      if (input.purchaseId) {
+        const [pur] = tx.select({ paidAmount: purchases.paidAmount, totalAmount: purchases.totalAmount }).from(purchases).where(eq(purchases.id, input.purchaseId)).limit(1).all();
+        if (!pur) throw new Error(`Purchase ${input.purchaseId} not found`);
+        const newPaid = Math.min(
+          pur.paidAmount + input.amount,
+          pur.totalAmount
+        );
+        tx.update(purchases).set({ paidAmount: newPaid, updatedAt: /* @__PURE__ */ new Date() }).where(eq(purchases.id, input.purchaseId)).run();
+      }
+      return payment.id;
+    });
+    const created = await this.getById(insertedId);
+    if (!created) throw new Error("Failed to load created payment");
+    return created;
+  },
+  async remove(id) {
+    const db = getDb();
+    await db.delete(companyPayments).where(eq(companyPayments.id, id));
+  },
+  /**
+   * Total company payments within a date range (for dashboard/reports).
+   */
+  async totalInRange(fromDate, toDate) {
+    const db = getDb();
+    const [row] = await db.select({
+      total: sql`COALESCE(SUM(${companyPayments.amount}), 0)`
+    }).from(companyPayments).where(
+      and(gte(companyPayments.date, fromDate), lte(companyPayments.date, toDate))
+    );
+    return row?.total ?? 0;
+  }
+};
+const optionalTrimmedString = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+  if (v === null || v === void 0) return void 0;
+  const t = v.trim();
+  if (t === "") return void 0;
+  if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+  return t;
+});
+const createExpenseSchema = object({
+  name: string().trim().min(1, "Name is required").max(120, "Name is too long"),
+  amount: number().int().positive("Amount must be positive"),
+  // paisa
+  date: date().optional(),
+  remarks: optionalTrimmedString(500)
+});
+const updateExpenseSchema = createExpenseSchema.partial().extend({
+  id: number().int().positive()
+});
+const expenseListQuerySchema = object({
+  search: string().trim().optional(),
+  fromDate: date().optional(),
+  toDate: date().optional(),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+const createCompanyPaymentSchema = object({
+  companyId: number().int().positive(),
+  purchaseId: number().int().positive().nullable().optional(),
+  amount: number().int().positive("Amount must be positive"),
+  // paisa
+  date: date().optional(),
+  remarks: optionalTrimmedString(500)
+});
+const companyPaymentListQuerySchema = object({
+  companyId: number().int().positive().optional(),
+  search: string().trim().optional(),
+  fromDate: date().optional(),
+  toDate: date().optional(),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerExpenseIpc() {
+  require$$3$1.ipcMain.handle("expense:list", async (_e, rawQuery) => {
+    const query = expenseListQuerySchema.parse(rawQuery ?? {});
+    return expenseService.list(query);
+  });
+  require$$3$1.ipcMain.handle("expense:count", async (_e, rawQuery) => {
+    const query = expenseListQuerySchema.pick({ search: true, fromDate: true, toDate: true }).parse(rawQuery ?? {});
+    return expenseService.count(query);
+  });
+  require$$3$1.ipcMain.handle("expense:get", async (_e, id) => {
+    return expenseService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("expense:create", async (_e, rawInput) => {
+    const input = createExpenseSchema.parse(rawInput);
+    return expenseService.create(input);
+  });
+  require$$3$1.ipcMain.handle("expense:update", async (_e, rawInput) => {
+    const input = updateExpenseSchema.parse(rawInput);
+    return expenseService.update(input);
+  });
+  require$$3$1.ipcMain.handle("expense:delete", async (_e, id) => {
+    await expenseService.remove(id);
+    return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("companyPayment:list", async (_e, rawQuery) => {
+    const query = companyPaymentListQuerySchema.parse(rawQuery ?? {});
+    return companyPaymentService.list(query);
+  });
+  require$$3$1.ipcMain.handle("companyPayment:get", async (_e, id) => {
+    return companyPaymentService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("companyPayment:create", async (_e, rawInput) => {
+    const input = createCompanyPaymentSchema.parse(rawInput);
+    return companyPaymentService.create(input);
+  });
+  require$$3$1.ipcMain.handle("companyPayment:delete", async (_e, id) => {
+    await companyPaymentService.remove(id);
+    return { ok: true };
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -12772,6 +13087,7 @@ function registerAllIpc() {
   registerAdjustmentIpc();
   registerBillIpc();
   registerPaymentIpc();
+  registerExpenseIpc();
 }
 if (started) {
   require$$3$1.app.quit();

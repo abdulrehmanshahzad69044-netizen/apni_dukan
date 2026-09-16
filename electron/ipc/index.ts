@@ -10,6 +10,7 @@ import { registerInventoryIpc } from "./inventory.ipc";
 import { registerAdjustmentIpc } from "./adjustment.ipc";
 import { registerBillIpc } from "./bill.ipc";
 import { registerPaymentIpc } from "./payment.ipc";
+import { registerExpenseIpc } from "./expense.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -24,4 +25,5 @@ export function registerAllIpc() {
   registerAdjustmentIpc();
   registerBillIpc();
   registerPaymentIpc();
+  registerExpenseIpc();
 }

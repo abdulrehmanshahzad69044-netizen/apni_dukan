@@ -68,6 +68,15 @@ import type {
   PaymentDetail,
   PaymentListQuery,
 } from "./payment";
+import type {
+  CompanyPayment,
+  CompanyPaymentListQuery,
+  CreateCompanyPaymentInput,
+  CreateExpenseInput,
+  Expense,
+  ExpenseListQuery,
+  UpdateExpenseInput,
+} from "./expense";
 
 export type IpcChannels = {
   "app:ping": {
@@ -196,7 +205,7 @@ export type AppApi = {
     get: (id: number) => Promise<StockAdjustment | null>;
     create: (input: CreateAdjustmentInput) => Promise<StockAdjustment>;
   };
-    bill: {
+  bill: {
     list: (query?: Partial<BillListQuery>) => Promise<Bill[]>;
     count: (
       query?: Pick<
@@ -221,6 +230,24 @@ export type AppApi = {
     list: (query?: Partial<KhaataListQuery>) => Promise<KhaataEntry[]>;
     detail: (customerId: number) => Promise<KhaataDetail | null>;
     totalOutstanding: () => Promise<number>;
+  };
+  expense: {
+    list: (query?: Partial<ExpenseListQuery>) => Promise<Expense[]>;
+    count: (
+      query?: Pick<ExpenseListQuery, "search" | "fromDate" | "toDate">
+    ) => Promise<number>;
+    get: (id: number) => Promise<Expense | null>;
+    create: (input: CreateExpenseInput) => Promise<Expense>;
+    update: (input: UpdateExpenseInput) => Promise<Expense>;
+    delete: (id: number) => Promise<{ ok: true }>;
+  };
+  companyPayment: {
+    list: (
+      query?: Partial<CompanyPaymentListQuery>
+    ) => Promise<CompanyPayment[]>;
+    get: (id: number) => Promise<CompanyPayment | null>;
+    create: (input: CreateCompanyPaymentInput) => Promise<CompanyPayment>;
+    delete: (id: number) => Promise<{ ok: true }>;
   };
 };
 

@@ -101,6 +101,20 @@ const api = {
     list: (query) => electron.ipcRenderer.invoke("khaata:list", query ?? {}),
     detail: (customerId) => electron.ipcRenderer.invoke("khaata:detail", customerId),
     totalOutstanding: () => electron.ipcRenderer.invoke("khaata:totalOutstanding")
+  },
+  expense: {
+    list: (query) => electron.ipcRenderer.invoke("expense:list", query ?? {}),
+    count: (query) => electron.ipcRenderer.invoke("expense:count", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("expense:get", id),
+    create: (input) => electron.ipcRenderer.invoke("expense:create", input),
+    update: (input) => electron.ipcRenderer.invoke("expense:update", input),
+    delete: (id) => electron.ipcRenderer.invoke("expense:delete", id)
+  },
+  companyPayment: {
+    list: (query) => electron.ipcRenderer.invoke("companyPayment:list", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("companyPayment:get", id),
+    create: (input) => electron.ipcRenderer.invoke("companyPayment:create", input),
+    delete: (id) => electron.ipcRenderer.invoke("companyPayment:delete", id)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

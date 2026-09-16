@@ -71,6 +71,13 @@
       "when": 1789454522636,
       "tag": "0009_living_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789544074318,
+      "tag": "0010_ambitious_ego",
+      "breakpoints": true
     }
   ]
 }

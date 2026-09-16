@@ -87,7 +87,7 @@ const api: AppApi = {
     get: (id) => ipcRenderer.invoke("adjustment:get", id),
     create: (input) => ipcRenderer.invoke("adjustment:create", input),
   },
-    bill: {
+  bill: {
     list: (query) => ipcRenderer.invoke("bill:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("bill:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("bill:get", id),
@@ -105,6 +105,20 @@ const api: AppApi = {
     list: (query) => ipcRenderer.invoke("khaata:list", query ?? {}),
     detail: (customerId) => ipcRenderer.invoke("khaata:detail", customerId),
     totalOutstanding: () => ipcRenderer.invoke("khaata:totalOutstanding"),
+  },
+  expense: {
+    list: (query) => ipcRenderer.invoke("expense:list", query ?? {}),
+    count: (query) => ipcRenderer.invoke("expense:count", query ?? {}),
+    get: (id) => ipcRenderer.invoke("expense:get", id),
+    create: (input) => ipcRenderer.invoke("expense:create", input),
+    update: (input) => ipcRenderer.invoke("expense:update", input),
+    delete: (id) => ipcRenderer.invoke("expense:delete", id),
+  },
+  companyPayment: {
+    list: (query) => ipcRenderer.invoke("companyPayment:list", query ?? {}),
+    get: (id) => ipcRenderer.invoke("companyPayment:get", id),
+    create: (input) => ipcRenderer.invoke("companyPayment:create", input),
+    delete: (id) => ipcRenderer.invoke("companyPayment:delete", id),
   },
 };
 
