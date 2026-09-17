@@ -9,12 +9,14 @@ import {
   ChevronUp,
   CheckCircle2,
   Trash2,
+  Printer,
 } from "lucide-react";
 import { Page } from "@/components/ui/Page";
 import { Button } from "@/components/ui/Button";
 import { CenterSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { PrintBillModal } from "./PrintBillModal";
 import { useBill } from "./hooks";
 import { billApi } from "./api";
 import { toast } from "@/lib/toast";
@@ -28,6 +30,7 @@ export function BillDetailPage() {
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
 
   if (loading) {
     return (
@@ -84,6 +87,12 @@ export function BillDetailPage() {
         description={data.customerName ?? "Walk-in customer"}
         actions={
           <div className="flex items-center gap-2">
+            {isFinalized && (
+              <Button onClick={() => setPrintOpen(true)}>
+                <Printer className="w-4 h-4" />
+                Print
+              </Button>
+            )}
             {isDraftish && (
               <>
                 <Button
@@ -107,7 +116,6 @@ export function BillDetailPage() {
           </div>
         }
       >
-        {/* Status banner for drafts */}
         {isDraftish && (
           <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3 mb-4 text-sm text-blue-700 dark:text-blue-400">
             This is a {data.status === "held" ? "held" : "draft"} bill. Stock
@@ -116,7 +124,6 @@ export function BillDetailPage() {
           </div>
         )}
 
-        {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="rounded-xl border bg-[rgb(var(--card))] p-4">
             <p className="text-xs text-[rgb(var(--muted-fg))]">Total</p>
@@ -158,7 +165,6 @@ export function BillDetailPage() {
           </div>
         </div>
 
-        {/* Meta */}
         <div className="flex items-center gap-4 mb-6 text-sm text-[rgb(var(--muted-fg))]">
           <span className="flex items-center gap-1.5">
             <Calendar className="w-4 h-4" />
@@ -182,7 +188,6 @@ export function BillDetailPage() {
           </div>
         )}
 
-        {/* Items */}
         <h2 className="text-lg font-semibold mb-3">Items</h2>
         <div className="rounded-xl border bg-[rgb(var(--card))] overflow-hidden">
           <table className="w-full text-sm">
@@ -325,6 +330,12 @@ export function BillDetailPage() {
         description="This will permanently remove this draft bill. No stock was deducted, so nothing needs to be restored."
         confirmLabel="Delete"
         destructive
+      />
+
+      <PrintBillModal
+        open={printOpen}
+        onClose={() => setPrintOpen(false)}
+        bill={data}
       />
     </>
   );

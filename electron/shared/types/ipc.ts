@@ -78,6 +78,8 @@ import type {
   UpdateExpenseInput,
 } from "./expense";
 
+import type { FullReport, ReportQuery, SalesSummary } from "./report";
+
 export type IpcChannels = {
   "app:ping": {
     request: { message: string };
@@ -241,7 +243,7 @@ export type AppApi = {
     update: (input: UpdateExpenseInput) => Promise<Expense>;
     delete: (id: number) => Promise<{ ok: true }>;
   };
-    companyPayment: {
+  companyPayment: {
     list: (
       query?: Partial<CompanyPaymentListQuery>
     ) => Promise<CompanyPayment[]>;
@@ -258,6 +260,23 @@ export type AppApi = {
     create: (input: CreateCompanyPaymentInput) => Promise<CompanyPayment>;
     delete: (id: number) => Promise<{ ok: true }>;
     totalOutstanding: () => Promise<number>;
+  };
+
+  report: {
+    full: (query?: Partial<ReportQuery>) => Promise<FullReport>;
+    today: () => Promise<SalesSummary>;
+  };
+    print: {
+    html: (req: {
+      html: string;
+      size: "thermal_80" | "thermal_58" | "a4";
+      documentTitle?: string;
+    }) => Promise<{ ok: true }>;
+    pdf: (req: {
+      html: string;
+      size: "thermal_80" | "thermal_58" | "a4";
+      documentTitle?: string;
+    }) => Promise<{ ok: true }>;
   };
 };
 

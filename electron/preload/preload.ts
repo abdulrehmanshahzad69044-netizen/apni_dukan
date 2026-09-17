@@ -124,9 +124,13 @@ const api: AppApi = {
     totalOutstanding: () =>
       ipcRenderer.invoke("companyPayment:totalOutstanding"),
   },
-    report: {
+  report: {
     full: (query) => ipcRenderer.invoke("report:full", query ?? {}),
     today: () => ipcRenderer.invoke("report:today"),
+  },
+  print: {
+    html: (req) => ipcRenderer.invoke("print:html", req),
+    pdf: (req) => ipcRenderer.invoke("print:pdf", req),
   },
 };
 

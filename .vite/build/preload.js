@@ -121,6 +121,10 @@ const api = {
   report: {
     full: (query) => electron.ipcRenderer.invoke("report:full", query ?? {}),
     today: () => electron.ipcRenderer.invoke("report:today")
+  },
+  print: {
+    html: (req) => electron.ipcRenderer.invoke("print:html", req),
+    pdf: (req) => electron.ipcRenderer.invoke("print:pdf", req)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);
