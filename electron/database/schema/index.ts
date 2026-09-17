@@ -1,6 +1,9 @@
 // Shared helpers
 export * from "./_shared";
 
+// Settings (must be first — referenced by other modules)
+export * from "./settings";
+
 // Module schemas
 export * from "./customers";
 export * from "./companies";

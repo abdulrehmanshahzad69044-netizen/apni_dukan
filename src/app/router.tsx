@@ -22,6 +22,7 @@ import { PaymentsPage } from "@/features/payments/PaymentsPage";
 import { ExpensesPage } from "@/features/expenses/ExpensesPage";
 import { CompanyPaymentsPage } from "@/features/company-payments/CompanyPaymentsPage";
 import { ReportsPage } from "@/features/reports/ReportsPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -30,12 +31,10 @@ export function AppRouter() {
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
 
-        {/* Billing */}
         <Route path="billing" element={<BillsPage />} />
         <Route path="billing/new" element={<BillEntryPage />} />
         <Route path="billing/:id" element={<BillDetailPage />} />
 
-        {/* Master data */}
         <Route path="customers" element={<CustomersPage />} />
         <Route path="companies" element={<CompaniesPage />} />
         <Route path="categories" element={<CategoriesPage />} />
@@ -44,27 +43,21 @@ export function AppRouter() {
         <Route path="products" element={<ProductsPage />} />
         <Route path="variants" element={<VariantsPage />} />
 
-        {/* Inventory */}
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="purchases/new" element={<PurchaseEntryPage />} />
         <Route path="purchases/:id" element={<PurchaseDetailPage />} />
         <Route path="inventory" element={<StockPage />} />
         <Route path="adjustments" element={<AdjustmentsPage />} />
 
-        {/* Khaata & Payments */}
         <Route path="khaata" element={<KhaataPage />} />
         <Route path="khaata/:customerId" element={<KhaataDetailPage />} />
         <Route path="payments" element={<PaymentsPage />} />
         <Route path="company-payments" element={<CompanyPaymentsPage />} />
 
-        {/* Expenses */}
         <Route path="expenses" element={<ExpensesPage />} />
-
-        {/* Reports */}
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
 
-        {/* Later */}
-        <Route path="settings" element={<ComingSoonPage title="Settings" />} />
         <Route path="*" element={<ComingSoonPage title="Not Found" />} />
       </Route>
     </Routes>

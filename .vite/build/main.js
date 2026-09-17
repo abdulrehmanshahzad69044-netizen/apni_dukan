@@ -10,6 +10,8 @@ const require$$4 = require("net");
 const crypto$1 = require("node:crypto");
 const fs = require("node:fs");
 const Client = require("better-sqlite3");
+const https = require("node:https");
+const http = require("node:http");
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
@@ -5394,6 +5396,11 @@ const timestamps = {
 const softDelete = {
   deletedAt: integer$1("deleted_at", { mode: "timestamp" })
 };
+const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  ...timestamps
+});
 const customers = sqliteTable(
   "customers",
   {
@@ -5924,6 +5931,7 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   purchases,
   purchasesRelations,
   quantity,
+  settings,
   softDelete,
   stockAdjustments,
   stockAdjustmentsRelations,
@@ -5953,6 +5961,13 @@ function getDatabasePath() {
   }
   return path.join(getUserDataDir(), DB_FILENAME);
 }
+function getBackupDir() {
+  const dir = path.join(getUserDataDir(), "backups");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
 function getMigrationsPath() {
   if (process.env.NODE_ENV === "development" || !require$$3$1.app.isPackaged) {
     return path.join(process.cwd(), "drizzle");
@@ -5974,6 +5989,9 @@ function getDb() {
     _db = createClient();
   }
   return _db;
+}
+function getRawDb() {
+  return getDb().$client;
 }
 function closeDb() {
   if (_db) {
@@ -11626,7 +11644,7 @@ const purchaseService = {
     return updated;
   }
 };
-const optionalTrimmedString$2 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+const optionalTrimmedString$3 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
   if (v === null || v === void 0) return void 0;
   const t = v.trim();
   if (t === "") return void 0;
@@ -11644,7 +11662,7 @@ const createPurchaseSchema = object({
   companyId: number().int().positive(),
   purchaseDate: date().optional(),
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: optionalTrimmedString$2(500),
+  remarks: optionalTrimmedString$3(500),
   lines: array(purchaseLineSchema).min(1, "Add at least one line")
 });
 const purchaseListQuerySchema = object({
@@ -12503,7 +12521,7 @@ const billService = {
     return row?.count ?? 0;
   }
 };
-const optionalTrimmedString$1 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+const optionalTrimmedString$2 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
   if (v === null || v === void 0) return void 0;
   const t = v.trim();
   if (t === "") return void 0;
@@ -12522,7 +12540,7 @@ const createBillSchema = object({
   customerId: number().int().positive().nullable().optional(),
   billDate: date().optional(),
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: optionalTrimmedString$1(500),
+  remarks: optionalTrimmedString$2(500),
   status: _enum(["draft", "held", "finalized"]).optional().default("finalized"),
   lines: array(billLineSchema).min(1, "Add at least one item")
 });
@@ -13104,7 +13122,7 @@ const companyPaymentService = {
     return row?.total ?? 0;
   }
 };
-const optionalTrimmedString = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+const optionalTrimmedString$1 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
   if (v === null || v === void 0) return void 0;
   const t = v.trim();
   if (t === "") return void 0;
@@ -13116,7 +13134,7 @@ const createExpenseSchema = object({
   amount: number().int().positive("Amount must be positive"),
   // paisa
   date: date().optional(),
-  remarks: optionalTrimmedString(500)
+  remarks: optionalTrimmedString$1(500)
 });
 const updateExpenseSchema = createExpenseSchema.partial().extend({
   id: number().int().positive()
@@ -13134,7 +13152,7 @@ const createCompanyPaymentSchema = object({
   amount: number().int().positive("Amount must be positive"),
   // paisa
   date: date().optional(),
-  remarks: optionalTrimmedString(500)
+  remarks: optionalTrimmedString$1(500)
 });
 const companyPaymentListQuerySchema = object({
   companyId: number().int().positive().optional(),
@@ -13710,6 +13728,673 @@ function registerPrintIpc() {
     return { ok: true };
   });
 }
+function timestamp$1() {
+  const d = /* @__PURE__ */ new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}_${p(d.getMonth() + 1)}_${p(d.getDate())}_${p(
+    d.getHours()
+  )}_${p(d.getMinutes())}`;
+}
+function checkpoint() {
+  const raw = getRawDb();
+  raw.pragma("wal_checkpoint(TRUNCATE)");
+}
+const backupService = {
+  /**
+   * Save a backup copy of the DB to the given directory (or default).
+   * If targetDir is not provided, the OS save dialog opens.
+   */
+  async createLocal(input) {
+    checkpoint();
+    let targetDir = input.targetDir;
+    if (!targetDir) {
+      targetDir = getBackupDir();
+    }
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const filename = `ApniDukan_Backup_${timestamp$1()}.db`;
+    const destPath = path.join(targetDir, filename);
+    const srcPath = getDatabasePath();
+    fs.copyFileSync(srcPath, destPath);
+    const stat = fs.statSync(destPath);
+    return {
+      name: filename,
+      path: destPath,
+      sizeBytes: stat.size,
+      createdAt: Math.floor(stat.mtimeMs / 1e3),
+      source: "local"
+    };
+  },
+  /**
+   * Save-as dialog: let the user pick WHERE to save the backup.
+   * Returns the chosen path, or null if canceled.
+   */
+  async saveAsDialog() {
+    const result = await require$$3$1.dialog.showSaveDialog({
+      title: "Save Backup As",
+      defaultPath: `ApniDukan_Backup_${timestamp$1()}.db`,
+      filters: [{ name: "SQLite Database", extensions: ["db"] }]
+    });
+    return result.canceled ? null : result.filePath ?? null;
+  },
+  /**
+   * Open file dialog: let the user pick a .db backup to restore.
+   */
+  async pickBackupFile() {
+    const result = await require$$3$1.dialog.showOpenDialog({
+      title: "Choose Backup File",
+      properties: ["openFile"],
+      filters: [{ name: "SQLite Database", extensions: ["db"] }]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  },
+  /**
+   * List backups in the default backups folder.
+   */
+  async listLocal() {
+    const dir = getBackupDir();
+    if (!fs.existsSync(dir)) return [];
+    const files = fs.readdirSync(dir);
+    const out = [];
+    for (const f of files) {
+      if (!f.endsWith(".db")) continue;
+      const full = path.join(dir, f);
+      const stat = fs.statSync(full);
+      out.push({
+        name: f,
+        path: full,
+        sizeBytes: stat.size,
+        createdAt: Math.floor(stat.mtimeMs / 1e3),
+        source: "local"
+      });
+    }
+    out.sort((a, b) => b.createdAt - a.createdAt);
+    return out;
+  },
+  /**
+   * Restore from a backup file. Safety-backups the current DB first.
+   */
+  async restore(input) {
+    const backupPath = input.path;
+    if (!fs.existsSync(backupPath)) {
+      throw new Error(`Backup file not found: ${backupPath}`);
+    }
+    const fd = fs.openSync(backupPath, "r");
+    const header = Buffer.alloc(16);
+    fs.readSync(fd, header, 0, 16, 0);
+    fs.closeSync(fd);
+    if (header.toString("utf8").slice(0, 15) !== "SQLite format 3") {
+      throw new Error("Selected file is not a valid SQLite database");
+    }
+    const raw = getRawDb();
+    raw.close();
+    const currentPath = getDatabasePath();
+    const safetyDir = getBackupDir();
+    if (!fs.existsSync(safetyDir)) {
+      fs.mkdirSync(safetyDir, { recursive: true });
+    }
+    const safetyPath = path.join(safetyDir, `pre_restore_${timestamp$1()}.db`);
+    if (fs.existsSync(currentPath)) {
+      fs.copyFileSync(currentPath, safetyPath);
+      const walPath = currentPath + "-wal";
+      const shmPath = currentPath + "-shm";
+      if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+      if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    }
+    fs.copyFileSync(backupPath, currentPath);
+    return {
+      ok: true,
+      safetyBackupPath: safetyPath
+    };
+  },
+  /**
+   * Delete a local backup file.
+   */
+  async deleteLocal(filePath) {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  },
+  /**
+   * Restart the app. Used after restore.
+   */
+  async restartApp() {
+    throw new Error("Restart must be triggered from main process");
+  }
+};
+const backup_service = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  backupService
+}, Symbol.toStringTag, { value: "Module" }));
+function configPath() {
+  return path.join(getUserDataDir(), "gdrive-config.bin");
+}
+function loadConfig() {
+  const p = configPath();
+  if (!fs.existsSync(p)) return null;
+  try {
+    const encrypted = fs.readFileSync(p);
+    const json = require$$3$1.safeStorage.isEncryptionAvailable() ? require$$3$1.safeStorage.decryptString(encrypted) : encrypted.toString("utf8");
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+function saveConfig(cfg) {
+  const json = JSON.stringify(cfg);
+  const p = configPath();
+  if (require$$3$1.safeStorage.isEncryptionAvailable()) {
+    fs.writeFileSync(p, require$$3$1.safeStorage.encryptString(json));
+  } else {
+    fs.writeFileSync(p, json, "utf8");
+  }
+}
+function httpsJson(options, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (c) => data += c);
+      res.on("end", () => {
+        try {
+          resolve({
+            status: res.statusCode ?? 0,
+            data: data ? JSON.parse(data) : null
+          });
+        } catch {
+          resolve({ status: res.statusCode ?? 0, data });
+        }
+      });
+    });
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+const OAUTH_PORT = 56234;
+const REDIRECT_URI = `http://localhost:${OAUTH_PORT}/oauth/callback`;
+const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
+async function startOauthFlow(cfg) {
+  const codeVerifier = crypto$1.randomBytes(32).toString("base64url");
+  const codeChallenge = crypto$1.createHash("sha256").update(codeVerifier).digest("base64url");
+  const state = crypto$1.randomBytes(16).toString("hex");
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", cfg.clientId);
+  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", SCOPES.join(" "));
+  authUrl.searchParams.set("code_challenge", codeChallenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("access_type", "offline");
+  authUrl.searchParams.set("prompt", "consent");
+  return new Promise((resolve, reject) => {
+    const server = http.createServer(async (req, res) => {
+      try {
+        const url = new URL(req.url ?? "/", `http://localhost:${OAUTH_PORT}`);
+        if (url.pathname !== "/oauth/callback") {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        const code = url.searchParams.get("code");
+        const returnedState = url.searchParams.get("state");
+        const error = url.searchParams.get("error");
+        if (error) {
+          res.writeHead(400, { "Content-Type": "text/html" });
+          res.end(
+            `<h1>Authorization failed</h1><p>${error}</p><p>Close this tab and try again.</p>`
+          );
+          server.close();
+          reject(new Error(`OAuth error: ${error}`));
+          return;
+        }
+        if (returnedState !== state || !code) {
+          res.writeHead(400);
+          res.end("Invalid state");
+          server.close();
+          reject(new Error("OAuth state mismatch"));
+          return;
+        }
+        const tokenBody = new URLSearchParams({
+          code,
+          client_id: cfg.clientId,
+          client_secret: cfg.clientSecret,
+          redirect_uri: REDIRECT_URI,
+          grant_type: "authorization_code",
+          code_verifier: codeVerifier
+        }).toString();
+        const tokenRes = await httpsJson(
+          {
+            method: "POST",
+            hostname: "oauth2.googleapis.com",
+            path: "/token",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "Content-Length": Buffer.byteLength(tokenBody)
+            }
+          },
+          tokenBody
+        );
+        if (tokenRes.status !== 200 || !tokenRes.data?.refresh_token) {
+          res.writeHead(500);
+          res.end("Token exchange failed");
+          server.close();
+          reject(new Error("Token exchange failed"));
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(
+          `<h1 style="font-family:system-ui">✓ Connected</h1><p style="font-family:system-ui">You can close this tab and return to Apni Dukan.</p>`
+        );
+        server.close();
+        resolve(tokenRes.data.refresh_token);
+      } catch (err) {
+        server.close();
+        reject(err);
+      }
+    });
+    server.listen(OAUTH_PORT, () => {
+      void require$$3$1.shell.openExternal(authUrl.toString());
+    });
+    setTimeout(() => {
+      server.close();
+      reject(new Error("OAuth timed out"));
+    }, 5 * 60 * 1e3);
+  });
+}
+async function getAccessToken(cfg) {
+  if (cfg.accessToken && cfg.accessTokenExpiry && cfg.accessTokenExpiry > Date.now() + 3e4) {
+    return cfg.accessToken;
+  }
+  if (!cfg.refreshToken) throw new Error("Not connected to Google Drive");
+  const body = new URLSearchParams({
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    refresh_token: cfg.refreshToken,
+    grant_type: "refresh_token"
+  }).toString();
+  const res = await httpsJson(
+    {
+      method: "POST",
+      hostname: "oauth2.googleapis.com",
+      path: "/token",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(body)
+      }
+    },
+    body
+  );
+  if (res.status !== 200 || !res.data?.access_token) {
+    throw new Error("Failed to refresh access token");
+  }
+  cfg.accessToken = res.data.access_token;
+  cfg.accessTokenExpiry = Date.now() + res.data.expires_in * 1e3;
+  saveConfig(cfg);
+  return cfg.accessToken;
+}
+async function findOrCreateFolder(accessToken, name) {
+  const q = `mimeType='application/vnd.google-apps.folder' and name='${name.replace(
+    /'/g,
+    "\\'"
+  )}' and trashed=false`;
+  const listRes = await httpsJson({
+    method: "GET",
+    hostname: "www.googleapis.com",
+    path: `/drive/v3/files?q=${encodeURIComponent(
+      q
+    )}&fields=files(id,name)&spaces=drive`,
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (listRes.data?.files?.length > 0) {
+    return listRes.data.files[0].id;
+  }
+  const body = JSON.stringify({
+    name,
+    mimeType: "application/vnd.google-apps.folder"
+  });
+  const createRes = await httpsJson(
+    {
+      method: "POST",
+      hostname: "www.googleapis.com",
+      path: "/drive/v3/files?fields=id",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body)
+      }
+    },
+    body
+  );
+  if (!createRes.data?.id) throw new Error("Failed to create folder");
+  return createRes.data.id;
+}
+async function uploadFile(accessToken, parentFolderId, filename, filePath) {
+  const fileBuffer = fs.readFileSync(filePath);
+  const boundary = "-------apni_dukan_" + crypto$1.randomBytes(8).toString("hex");
+  const metadata = JSON.stringify({
+    name: filename,
+    parents: [parentFolderId]
+  });
+  const bodyBuffer = Buffer.concat([
+    Buffer.from(`--${boundary}\r
+`),
+    Buffer.from(`Content-Type: application/json; charset=UTF-8\r
+\r
+`),
+    Buffer.from(metadata),
+    Buffer.from(`\r
+--${boundary}\r
+`),
+    Buffer.from(`Content-Type: application/octet-stream\r
+\r
+`),
+    fileBuffer,
+    Buffer.from(`\r
+--${boundary}--\r
+`)
+  ]);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        method: "POST",
+        hostname: "www.googleapis.com",
+        path: "/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,createdTime",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": `multipart/related; boundary=${boundary}`,
+          "Content-Length": bodyBuffer.length
+        }
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => data += c);
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.id) resolve(parsed);
+            else reject(new Error(parsed.error?.message ?? "Upload failed"));
+          } catch {
+            reject(new Error("Upload failed"));
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.write(bodyBuffer);
+    req.end();
+  });
+}
+async function listBackupFiles(accessToken) {
+  const folderId = await findOrCreateFolder(accessToken, "Apni Dukan Backups");
+  const q = `'${folderId}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`;
+  const res = await httpsJson({
+    method: "GET",
+    hostname: "www.googleapis.com",
+    path: `/drive/v3/files?q=${encodeURIComponent(
+      q
+    )}&fields=files(id,name,size,createdTime)&orderBy=createdTime desc&pageSize=100`,
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const files = res.data?.files ?? [];
+  return files.map((f) => ({
+    name: f.name,
+    path: f.id,
+    fileId: f.id,
+    sizeBytes: parseInt(f.size ?? "0", 10),
+    createdAt: Math.floor(new Date(f.createdTime).getTime() / 1e3),
+    source: "gdrive"
+  }));
+}
+async function downloadFile(accessToken, fileId, destPath) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        method: "GET",
+        hostname: "www.googleapis.com",
+        path: `/drive/v3/files/${fileId}?alt=media`,
+        headers: { Authorization: `Bearer ${accessToken}` }
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          return;
+        }
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          fs.writeFileSync(destPath, Buffer.concat(chunks));
+          resolve();
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+function timestamp() {
+  const d = /* @__PURE__ */ new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}_${p(d.getMonth() + 1)}_${p(d.getDate())}_${p(
+    d.getHours()
+  )}_${p(d.getMinutes())}`;
+}
+const gdriveService = {
+  async getStatus() {
+    const cfg = loadConfig();
+    if (!cfg) return { connected: false, email: null, configured: false };
+    return {
+      connected: !!cfg.refreshToken,
+      email: cfg.email ?? null,
+      configured: !!(cfg.clientId && cfg.clientSecret)
+    };
+  },
+  async configure(input) {
+    let cfg = loadConfig() ?? {
+      clientId: "",
+      clientSecret: ""
+    };
+    cfg.clientId = input.clientId;
+    cfg.clientSecret = input.clientSecret;
+    saveConfig(cfg);
+    return this.getStatus();
+  },
+  async connect() {
+    const cfg = loadConfig();
+    if (!cfg?.clientId || !cfg?.clientSecret) {
+      throw new Error(
+        "Google Drive not configured. Enter Client ID and Secret first."
+      );
+    }
+    const refreshToken = await startOauthFlow(cfg);
+    cfg.refreshToken = refreshToken;
+    cfg.accessToken = void 0;
+    cfg.accessTokenExpiry = void 0;
+    saveConfig(cfg);
+    return this.getStatus();
+  },
+  async disconnect() {
+    const cfg = loadConfig();
+    if (cfg) {
+      delete cfg.refreshToken;
+      delete cfg.accessToken;
+      delete cfg.accessTokenExpiry;
+      saveConfig(cfg);
+    }
+    return this.getStatus();
+  },
+  async upload(input) {
+    const cfg = loadConfig();
+    if (!cfg?.refreshToken) throw new Error("Not connected to Google Drive");
+    getRawDb().pragma("wal_checkpoint(TRUNCATE)");
+    const accessToken = await getAccessToken(cfg);
+    const folderId = await findOrCreateFolder(accessToken, "Apni Dukan Backups");
+    const filename = input.filename ?? `ApniDukan_Backup_${timestamp()}.db`;
+    const dbPath = getDatabasePath();
+    const uploaded = await uploadFile(
+      accessToken,
+      folderId,
+      filename,
+      dbPath
+    );
+    const stat = fs.statSync(dbPath);
+    return {
+      name: filename,
+      path: uploaded.id,
+      fileId: uploaded.id,
+      sizeBytes: stat.size,
+      createdAt: Math.floor(Date.now() / 1e3),
+      source: "gdrive"
+    };
+  },
+  async list() {
+    const cfg = loadConfig();
+    if (!cfg?.refreshToken) throw new Error("Not connected to Google Drive");
+    const accessToken = await getAccessToken(cfg);
+    return listBackupFiles(accessToken);
+  },
+  async restore(input) {
+    const cfg = loadConfig();
+    if (!cfg?.refreshToken) throw new Error("Not connected to Google Drive");
+    const accessToken = await getAccessToken(cfg);
+    const tmpDir = getBackupDir();
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const tmpPath = path.join(tmpDir, `gdrive_download_${timestamp()}.db`);
+    await downloadFile(accessToken, input.fileId, tmpPath);
+    const { backupService: backupService2 } = await Promise.resolve().then(() => backup_service);
+    return backupService2.restore({ path: tmpPath });
+  }
+};
+const localBackupSchema = object({
+  /** Optional custom folder. If missing, uses default userData/backups */
+  targetDir: string().optional()
+});
+const restoreSchema = object({
+  path: string()
+});
+const gdriveUploadSchema = object({
+  /** Optional custom name. Default: timestamped */
+  filename: string().optional()
+});
+const gdriveRestoreSchema = object({
+  fileId: string()
+});
+const gdriveConfigSchema = object({
+  clientId: string().trim().min(1),
+  clientSecret: string().trim().min(1)
+});
+function registerBackupIpc() {
+  require$$3$1.ipcMain.handle("backup:createLocal", async (_e, rawInput) => {
+    const input = localBackupSchema.parse(rawInput ?? {});
+    return backupService.createLocal(input);
+  });
+  require$$3$1.ipcMain.handle("backup:saveAsDialog", async () => {
+    return backupService.saveAsDialog();
+  });
+  require$$3$1.ipcMain.handle("backup:pickFile", async () => {
+    return backupService.pickBackupFile();
+  });
+  require$$3$1.ipcMain.handle("backup:listLocal", async () => {
+    return backupService.listLocal();
+  });
+  require$$3$1.ipcMain.handle("backup:restore", async (_e, rawInput) => {
+    const input = restoreSchema.parse(rawInput);
+    return backupService.restore(input);
+  });
+  require$$3$1.ipcMain.handle("backup:deleteLocal", async (_e, filePath) => {
+    await backupService.deleteLocal(filePath);
+    return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("backup:restart", async () => {
+    require$$3$1.app.relaunch();
+    require$$3$1.app.exit(0);
+  });
+  require$$3$1.ipcMain.handle("gdrive:status", async () => {
+    return gdriveService.getStatus();
+  });
+  require$$3$1.ipcMain.handle("gdrive:configure", async (_e, rawInput) => {
+    const input = gdriveConfigSchema.parse(rawInput);
+    return gdriveService.configure(input);
+  });
+  require$$3$1.ipcMain.handle("gdrive:connect", async () => {
+    return gdriveService.connect();
+  });
+  require$$3$1.ipcMain.handle("gdrive:disconnect", async () => {
+    return gdriveService.disconnect();
+  });
+  require$$3$1.ipcMain.handle("gdrive:upload", async (_e, rawInput) => {
+    const input = gdriveUploadSchema.parse(rawInput ?? {});
+    return gdriveService.upload(input);
+  });
+  require$$3$1.ipcMain.handle("gdrive:list", async () => {
+    return gdriveService.list();
+  });
+  require$$3$1.ipcMain.handle("gdrive:restore", async (_e, rawInput) => {
+    const input = gdriveRestoreSchema.parse(rawInput);
+    return gdriveService.restore(input);
+  });
+}
+const DEFAULT_SETTINGS = {
+  shopName: "Apni Dukan",
+  shopAddress: "",
+  shopPhone: "",
+  taxNumber: "",
+  receiptFooter: "Thank you for your business!",
+  defaultReceiptSize: "thermal_80",
+  currency: "PKR",
+  onboardingComplete: false
+};
+const optionalTrimmedString = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+  if (v === null || v === void 0) return "";
+  const t = v.trim();
+  if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+  return t;
+});
+const updateSettingsSchema = object({
+  shopName: string().trim().min(1, "Shop name is required").max(120),
+  shopAddress: optionalTrimmedString(300),
+  shopPhone: optionalTrimmedString(30),
+  taxNumber: optionalTrimmedString(30),
+  receiptFooter: optionalTrimmedString(200),
+  defaultReceiptSize: _enum(["thermal_80", "thermal_58", "a4"]),
+  currency: string().trim().min(1).max(10),
+  onboardingComplete: boolean().optional()
+});
+const SETTINGS_KEY = "app";
+const settingsService = {
+  async get() {
+    const db = getDb();
+    const rows = await db.select().from(settings).where(eq(settings.key, SETTINGS_KEY)).limit(1);
+    if (!rows[0]) return { ...DEFAULT_SETTINGS };
+    try {
+      const parsed = JSON.parse(rows[0].value);
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  },
+  async update(input) {
+    const db = getDb();
+    const current = await this.get();
+    const next = { ...current, ...input };
+    const serialized = JSON.stringify(next);
+    await db.insert(settings).values({ key: SETTINGS_KEY, value: serialized }).onConflictDoUpdate({
+      target: settings.key,
+      set: { value: serialized, updatedAt: /* @__PURE__ */ new Date() }
+    });
+    return next;
+  }
+};
+function registerSettingsIpc() {
+  require$$3$1.ipcMain.handle("settings:get", async () => {
+    return settingsService.get();
+  });
+  require$$3$1.ipcMain.handle("settings:update", async (_e, rawInput) => {
+    const input = updateSettingsSchema.parse(rawInput);
+    return settingsService.update(input);
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -13726,6 +14411,8 @@ function registerAllIpc() {
   registerExpenseIpc();
   registerReportIpc();
   registerPrintIpc();
+  registerBackupIpc();
+  registerSettingsIpc();
 }
 if (started) {
   require$$3$1.app.quit();

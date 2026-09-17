@@ -132,6 +132,28 @@ const api: AppApi = {
     html: (req) => ipcRenderer.invoke("print:html", req),
     pdf: (req) => ipcRenderer.invoke("print:pdf", req),
   },
+    backup: {
+    createLocal: (input) => ipcRenderer.invoke("backup:createLocal", input ?? {}),
+    saveAsDialog: () => ipcRenderer.invoke("backup:saveAsDialog"),
+    pickFile: () => ipcRenderer.invoke("backup:pickFile"),
+    listLocal: () => ipcRenderer.invoke("backup:listLocal"),
+    restore: (input) => ipcRenderer.invoke("backup:restore", input),
+    deleteLocal: (filePath) => ipcRenderer.invoke("backup:deleteLocal", filePath),
+    restart: () => ipcRenderer.invoke("backup:restart"),
+  },
+  gdrive: {
+    status: () => ipcRenderer.invoke("gdrive:status"),
+    configure: (input) => ipcRenderer.invoke("gdrive:configure", input),
+    connect: () => ipcRenderer.invoke("gdrive:connect"),
+    disconnect: () => ipcRenderer.invoke("gdrive:disconnect"),
+    upload: (input) => ipcRenderer.invoke("gdrive:upload", input ?? {}),
+    list: () => ipcRenderer.invoke("gdrive:list"),
+    restore: (input) => ipcRenderer.invoke("gdrive:restore", input),
+  },
+  settings: {
+    get: () => ipcRenderer.invoke("settings:get"),
+    update: (input) => ipcRenderer.invoke("settings:update", input),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

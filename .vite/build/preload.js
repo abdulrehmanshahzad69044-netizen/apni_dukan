@@ -125,6 +125,28 @@ const api = {
   print: {
     html: (req) => electron.ipcRenderer.invoke("print:html", req),
     pdf: (req) => electron.ipcRenderer.invoke("print:pdf", req)
+  },
+  backup: {
+    createLocal: (input) => electron.ipcRenderer.invoke("backup:createLocal", input ?? {}),
+    saveAsDialog: () => electron.ipcRenderer.invoke("backup:saveAsDialog"),
+    pickFile: () => electron.ipcRenderer.invoke("backup:pickFile"),
+    listLocal: () => electron.ipcRenderer.invoke("backup:listLocal"),
+    restore: (input) => electron.ipcRenderer.invoke("backup:restore", input),
+    deleteLocal: (filePath) => electron.ipcRenderer.invoke("backup:deleteLocal", filePath),
+    restart: () => electron.ipcRenderer.invoke("backup:restart")
+  },
+  gdrive: {
+    status: () => electron.ipcRenderer.invoke("gdrive:status"),
+    configure: (input) => electron.ipcRenderer.invoke("gdrive:configure", input),
+    connect: () => electron.ipcRenderer.invoke("gdrive:connect"),
+    disconnect: () => electron.ipcRenderer.invoke("gdrive:disconnect"),
+    upload: (input) => electron.ipcRenderer.invoke("gdrive:upload", input ?? {}),
+    list: () => electron.ipcRenderer.invoke("gdrive:list"),
+    restore: (input) => electron.ipcRenderer.invoke("gdrive:restore", input)
+  },
+  settings: {
+    get: () => electron.ipcRenderer.invoke("settings:get"),
+    update: (input) => electron.ipcRenderer.invoke("settings:update", input)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

@@ -280,7 +280,23 @@ export async function printBill(
   size: PrintSize,
   shop?: ShopInfo
 ): Promise<void> {
-  const html = buildBillHtml(bill, size, shop);
+  // If no shop info provided, fetch from settings
+  let shopInfo = shop;
+  if (!shopInfo) {
+    try {
+      const s = await window.api.settings.get();
+      shopInfo = {
+        name: s.shopName,
+        address: s.shopAddress,
+        phone: s.shopPhone,
+        footer: s.receiptFooter,
+        taxNumber: s.taxNumber,
+      };
+    } catch {
+      shopInfo = DEFAULT_SHOP_INFO;
+    }
+  }
+  const html = buildBillHtml(bill, size, shopInfo);
   await window.api.print.html({
     html,
     size,

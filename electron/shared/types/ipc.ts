@@ -77,6 +77,14 @@ import type {
   ExpenseListQuery,
   UpdateExpenseInput,
 } from "./expense";
+import type {
+  BackupFile,
+  GdriveConfigInput,
+  GdriveStatus,
+  LocalBackupInput,
+  RestoreResult,
+} from "./backup";
+import type { Settings, UpdateSettingsInput } from "./settings";
 
 import type { FullReport, ReportQuery, SalesSummary } from "./report";
 
@@ -266,7 +274,7 @@ export type AppApi = {
     full: (query?: Partial<ReportQuery>) => Promise<FullReport>;
     today: () => Promise<SalesSummary>;
   };
-    print: {
+  print: {
     html: (req: {
       html: string;
       size: "thermal_80" | "thermal_58" | "a4";
@@ -277,6 +285,28 @@ export type AppApi = {
       size: "thermal_80" | "thermal_58" | "a4";
       documentTitle?: string;
     }) => Promise<{ ok: true }>;
+  };
+    backup: {
+    createLocal: (input?: LocalBackupInput) => Promise<BackupFile>;
+    saveAsDialog: () => Promise<string | null>;
+    pickFile: () => Promise<string | null>;
+    listLocal: () => Promise<BackupFile[]>;
+    restore: (input: { path: string }) => Promise<RestoreResult>;
+    deleteLocal: (filePath: string) => Promise<{ ok: true }>;
+    restart: () => Promise<void>;
+  };
+  gdrive: {
+    status: () => Promise<GdriveStatus>;
+    configure: (input: GdriveConfigInput) => Promise<GdriveStatus>;
+    connect: () => Promise<GdriveStatus>;
+    disconnect: () => Promise<GdriveStatus>;
+    upload: (input: { filename?: string }) => Promise<BackupFile>;
+    list: () => Promise<BackupFile[]>;
+    restore: (input: { fileId: string }) => Promise<RestoreResult>;
+  };
+  settings: {
+    get: () => Promise<Settings>;
+    update: (input: UpdateSettingsInput) => Promise<Settings>;
   };
 };
 

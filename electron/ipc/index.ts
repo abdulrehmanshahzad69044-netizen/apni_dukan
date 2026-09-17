@@ -13,6 +13,8 @@ import { registerPaymentIpc } from "./payment.ipc";
 import { registerExpenseIpc } from "./expense.ipc";
 import { registerReportIpc } from "./report.ipc";
 import { registerPrintIpc } from "./print.ipc";
+import { registerBackupIpc } from "./backup.ipc";
+import { registerSettingsIpc } from "./settings.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -30,4 +32,6 @@ export function registerAllIpc() {
   registerExpenseIpc();
   registerReportIpc();
   registerPrintIpc();
+  registerBackupIpc();
+  registerSettingsIpc();
 }
