@@ -87,3 +87,19 @@ export function toDateInputValue(input: number | Date): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Raw rupee value (as number) for CSV export.
+ * e.g. 120050 paisa → 1200.5
+ */
+export function paisaToRupeesNumber(paisa: number): number {
+  return Math.round(paisa) / 100;
+}
+
+/**
+ * Raw quantity value (as number) for CSV export.
+ * e.g. 1500 milli-units → 1.5
+ */
+export function milliToQuantityNumber(milli: number): number {
+  return Math.round(milli) / 1000;
+}

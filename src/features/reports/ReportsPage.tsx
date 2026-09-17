@@ -17,6 +17,8 @@ import { dateRangeFilename } from "@/lib/csv";
 import {
   formatMoney,
   formatQuantity,
+  paisaToRupeesNumber,
+  milliToQuantityNumber,
 } from "@/lib/format";
 import type {
   CollectionRow,
@@ -34,7 +36,6 @@ export function ReportsPage() {
   const [groupBy, setGroupBy] = useState<"day" | "month">("day");
 
   const query = useMemo(() => {
-    // End date: set to end of that day
     const [y, m, d] = to.split("-").map(Number);
     const toDate = new Date(y, m - 1, d, 23, 59, 59);
     const [y2, m2, d2] = from.split("-").map(Number);
@@ -88,13 +89,10 @@ export function ReportsPage() {
         />
       ) : (
         <div className="space-y-6">
-          {/* 1. Summary cards */}
           <SummaryCards summary={data.summary} />
 
-          {/* 2. Trend chart */}
           <TrendChart data={data.timeSeries} />
 
-          {/* 3. Top products chart + table */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <TopProductsChart data={data.topProducts} />
             <TopProductsTable
@@ -103,7 +101,6 @@ export function ReportsPage() {
             />
           </div>
 
-          {/* 4. Two-column: Categories + Customers */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <CategoriesTable
               rows={data.topCategories}
@@ -115,7 +112,6 @@ export function ReportsPage() {
             />
           </div>
 
-          {/* 5. Two-column: Companies + Collections */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <CompaniesTable
               rows={data.topCompanies}
@@ -126,6 +122,9 @@ export function ReportsPage() {
               csvFilename={`collections_${filePrefix}`}
             />
           </div>
+
+          {/* Summary CSV — one row with all headline numbers */}
+          <SummaryCsvTable data={data} csvFilename={`summary_${filePrefix}`} />
         </div>
       )}
     </Page>
@@ -159,18 +158,28 @@ function TopProductsTable({
       label: "Qty Sold",
       align: "right",
       render: (r) => formatQuantity(r.quantitySold),
+      csvValue: (r) => milliToQuantityNumber(r.quantitySold),
     },
     {
       key: "revenue",
-      label: "Revenue",
+      label: "Revenue (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.revenue, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.revenue),
+    },
+    {
+      key: "cogs",
+      label: "COGS (Rs.)",
+      align: "right",
+      render: (r) => formatMoney(r.cogs, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.cogs),
     },
     {
       key: "profit",
-      label: "Profit",
+      label: "Profit (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.profit, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.profit),
       cell: (r) => (
         <span
           className={
@@ -210,15 +219,24 @@ function CategoriesTable({
     },
     {
       key: "revenue",
-      label: "Revenue",
+      label: "Revenue (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.revenue, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.revenue),
+    },
+    {
+      key: "cogs",
+      label: "COGS (Rs.)",
+      align: "right",
+      render: (r) => formatMoney(r.cogs, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.cogs),
     },
     {
       key: "profit",
-      label: "Profit",
+      label: "Profit (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.profit, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.profit),
       cell: (r) => (
         <span
           className={
@@ -254,15 +272,31 @@ function CustomersTable({
     { key: "billCount", label: "Bills", align: "right" },
     {
       key: "revenue",
-      label: "Revenue",
+      label: "Revenue (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.revenue, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.revenue),
+    },
+    {
+      key: "cogs",
+      label: "COGS (Rs.)",
+      align: "right",
+      render: (r) => formatMoney(r.cogs, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.cogs),
+    },
+    {
+      key: "profit",
+      label: "Profit (Rs.)",
+      align: "right",
+      render: (r) => formatMoney(r.profit, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.profit),
     },
     {
       key: "currentOutstanding",
-      label: "Outstanding",
+      label: "Outstanding (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.currentOutstanding, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.currentOutstanding),
       cell: (r) => (
         <span
           className={
@@ -298,15 +332,24 @@ function CompaniesTable({
     { key: "purchaseCount", label: "Purchases", align: "right" },
     {
       key: "totalPurchases",
-      label: "Total Bought",
+      label: "Total Bought (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.totalPurchases, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.totalPurchases),
+    },
+    {
+      key: "totalPaid",
+      label: "Paid (Rs.)",
+      align: "right",
+      render: (r) => formatMoney(r.totalPaid, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.totalPaid),
     },
     {
       key: "totalOutstanding",
-      label: "Outstanding",
+      label: "Outstanding (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.totalOutstanding, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.totalOutstanding),
       cell: (r) => (
         <span
           className={
@@ -342,9 +385,10 @@ function CollectionsTable({
     { key: "paymentCount", label: "Payments", align: "right" },
     {
       key: "totalReceived",
-      label: "Received",
+      label: "Received (Rs.)",
       align: "right",
       render: (r) => formatMoney(r.totalReceived, { showDecimals: false }),
+      csvValue: (r) => paisaToRupeesNumber(r.totalReceived),
       cell: (r) => (
         <span className="text-green-600 dark:text-green-400">
           {formatMoney(r.totalReceived, { showDecimals: false })}
@@ -357,6 +401,67 @@ function CollectionsTable({
       title="Collections (Cash In)"
       columns={columns}
       rows={rows}
+      csvFilename={csvFilename}
+    />
+  );
+}
+
+/**
+ * One-row summary CSV. All numbers in rupees.
+ */
+function SummaryCsvTable({
+  data,
+  csvFilename,
+}: {
+  data: import("../../../electron/shared/types/report").FullReport;
+  csvFilename: string;
+}) {
+  const s = data.summary;
+  const row = {
+    fromDate: new Date(data.range.fromDate * 1000)
+      .toISOString()
+      .slice(0, 10),
+    toDate: new Date(data.range.toDate * 1000).toISOString().slice(0, 10),
+    totalSales: paisaToRupeesNumber(s.totalSales),
+    totalCogs: paisaToRupeesNumber(s.totalCogs),
+    grossProfit: paisaToRupeesNumber(s.grossProfit),
+    grossMarginPct: s.grossMarginPct,
+    businessExpenses: paisaToRupeesNumber(s.businessExpenses),
+    netProfit: paisaToRupeesNumber(s.netProfit),
+    netMarginPct: s.netMarginPct,
+    customerPaymentsReceived: paisaToRupeesNumber(s.customerPaymentsReceived),
+    companyPaymentsMade: paisaToRupeesNumber(s.companyPaymentsMade),
+    cashOutflow: paisaToRupeesNumber(s.cashOutflow),
+    billCount: s.billCount,
+    avgBillValue: paisaToRupeesNumber(s.avgBillValue),
+  };
+
+  const columns: Column<typeof row>[] = [
+    { key: "fromDate", label: "From" },
+    { key: "toDate", label: "To" },
+    { key: "billCount", label: "Bill Count", align: "right" },
+    { key: "avgBillValue", label: "Avg Bill (Rs.)", align: "right" },
+    { key: "totalSales", label: "Total Sales (Rs.)", align: "right" },
+    { key: "totalCogs", label: "COGS (Rs.)", align: "right" },
+    { key: "grossProfit", label: "Gross Profit (Rs.)", align: "right" },
+    { key: "grossMarginPct", label: "Gross Margin %", align: "right" },
+    { key: "businessExpenses", label: "Expenses (Rs.)", align: "right" },
+    { key: "netProfit", label: "Net Profit (Rs.)", align: "right" },
+    { key: "netMarginPct", label: "Net Margin %", align: "right" },
+    {
+      key: "customerPaymentsReceived",
+      label: "Cash In (Rs.)",
+      align: "right",
+    },
+    { key: "companyPaymentsMade", label: "Paid to Cos (Rs.)", align: "right" },
+    { key: "cashOutflow", label: "Cash Outflow (Rs.)", align: "right" },
+  ];
+
+  return (
+    <ReportTable
+      title="Summary Report"
+      columns={columns}
+      rows={[row]}
       csvFilename={csvFilename}
     />
   );

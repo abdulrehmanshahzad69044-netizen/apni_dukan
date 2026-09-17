@@ -6,11 +6,20 @@ export type Column<T> = {
   key: keyof T | string;
   label: string;
   align?: "left" | "right";
-  /** Optional renderer — receives the row and returns a string or number to display */
+  /**
+   * Render for the table UI.
+   * Return a string or number. Use `cell` if you need JSX styling.
+   */
   render?: (row: T) => string | number;
-  /** Optional custom cell renderer — returns JSX for styling */
+  /** Custom JSX cell for the table UI (takes precedence over render) */
   cell?: (row: T) => React.ReactNode;
-  /** If true, exclude from CSV export */
+  /**
+   * Raw value for CSV export.
+   * If provided, this is used instead of render for CSV.
+   * Use this to export numbers instead of formatted strings.
+   */
+  csvValue?: (row: T) => string | number | null | undefined;
+  /** Exclude from CSV export entirely */
   hideInCsv?: boolean;
 };
 
@@ -37,7 +46,9 @@ export function ReportTable<T extends Record<string, unknown>>({
     const out: Record<string, unknown> = {};
     for (const c of columns.filter((cc) => !cc.hideInCsv)) {
       const key = c.key as string;
-      if (c.render) {
+      if (c.csvValue) {
+        out[key] = c.csvValue(r);
+      } else if (c.render) {
         out[key] = c.render(r);
       } else {
         out[key] = r[key];
