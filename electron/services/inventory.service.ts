@@ -13,22 +13,27 @@ export const inventoryService = {
       .prepare(
         `
         SELECT
-          b.variant_id                             AS variantId,
-          v.product_id                             AS productId,
-          p.name                                   AS productName,
-          v.name                                   AS variantName,
-          v.base_unit_id                           AS baseUnitId,
-          u.name                                   AS baseUnitName,
-          u.short_name                             AS baseUnitShortName,
-          v.low_stock_threshold                    AS lowStockThreshold,
-          SUM(b.remaining_quantity)                AS currentStock,
+          b.variant_id                              AS variantId,
+          v.product_id                              AS productId,
+          p.name                                    AS productName,
+          v.name                                    AS variantName,
+          v.base_unit_id                            AS baseUnitId,
+          u.name                                    AS baseUnitName,
+          u.short_name                              AS baseUnitShortName,
+          v.purchase_unit_id                        AS purchaseUnitId,
+          v.purchase_unit_factor                    AS purchaseUnitFactor,
+          pu.name                                   AS purchaseUnitName,
+          pu.short_name                             AS purchaseUnitShortName,
+          v.low_stock_threshold                     AS lowStockThreshold,
+          SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
-          COUNT(*)                                 AS activeBatchCount,
-          MAX(b.purchase_date)                     AS lastPurchaseDate
+          COUNT(*)                                  AS activeBatchCount,
+          MAX(b.purchase_date)                      AS lastPurchaseDate
         FROM stock_batches b
         INNER JOIN variants  v ON v.id = b.variant_id
         INNER JOIN products  p ON p.id = v.product_id
         INNER JOIN units     u ON u.id = v.base_unit_id
+        LEFT  JOIN units     pu ON pu.id = v.purchase_unit_id
         WHERE b.remaining_quantity > 0
           AND v.deleted_at IS NULL
           ${query.search ? "AND (p.name LIKE @search OR v.name LIKE @search)" : ""}
@@ -43,6 +48,10 @@ export const inventoryService = {
       baseUnitId: number;
       baseUnitName: string;
       baseUnitShortName: string;
+      purchaseUnitId: number | null;
+      purchaseUnitName: string | null;
+      purchaseUnitShortName: string | null;
+      purchaseUnitFactor: number | null;
       lowStockThreshold: number | null;
       currentStock: number;
       valueMilliPaisa: number;
@@ -105,6 +114,10 @@ export const inventoryService = {
         baseUnitId: r.baseUnitId,
         baseUnitName: r.baseUnitName,
         baseUnitShortName: r.baseUnitShortName,
+        purchaseUnitId: r.purchaseUnitId,
+        purchaseUnitName: r.purchaseUnitName,
+        purchaseUnitShortName: r.purchaseUnitShortName,
+        purchaseUnitFactor: r.purchaseUnitFactor,
         currentStock,
         avgCost,
         stockValue: stockValuePaisa,
@@ -118,7 +131,6 @@ export const inventoryService = {
       };
     });
 
-    // Filters
     if (query.filter === "out") {
       items = items.filter((i) => i.currentStock === 0);
     } else if (query.filter === "in") {
@@ -131,7 +143,6 @@ export const inventoryService = {
       );
     }
 
-    // Sorting
     const sort = query.sort ?? "name";
     items.sort((a, b) => {
       switch (sort) {
@@ -176,8 +187,6 @@ export const inventoryService = {
       )
       .all() as Array<{ totalVariants: number; valuePaisa: number }>;
 
-    // Low stock count: variants with a threshold set AND current stock <= threshold
-    // Includes out-of-stock variants with a threshold.
     const [lowRow] = db.$client
       .prepare(
         `
@@ -195,7 +204,6 @@ export const inventoryService = {
       )
       .all() as Array<{ lowCount: number }>;
 
-    // Out of stock: variants that exist but have no remaining batches
     const [outRow] = db.$client
       .prepare(
         `
@@ -218,10 +226,6 @@ export const inventoryService = {
     };
   },
 
-  /**
-   * All purchase batches for a variant, oldest first.
-   * Used by the price-history modal.
-   */
   async priceHistory(variantId: number): Promise<PriceHistoryEntry[]> {
     const db = getDb();
     const rows = db.$client

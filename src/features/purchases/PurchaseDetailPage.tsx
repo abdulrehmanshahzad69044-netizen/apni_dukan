@@ -7,11 +7,7 @@ import { CenterSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RecordPaymentModal } from "./RecordPaymentModal";
 import { usePurchase } from "./hooks";
-import {
-  formatMoney,
-  formatDate,
-  formatQuantity,
-} from "@/lib/format";
+import { formatMoney, formatDate, formatStockDisplay } from "@/lib/format";
 
 export function PurchaseDetailPage() {
   const { id } = useParams();
@@ -128,7 +124,13 @@ export function PurchaseDetailPage() {
                     </div>
                   </td>
                   <td className="text-right px-4 py-3">
-                    {formatQuantity(b.quantityPurchased)}
+                    {/* {formatQuantity(b.quantityPurchased)}
+                     */}
+                    {formatStockDisplay(b.quantityPurchased, {
+  baseUnitShortName: b.baseUnitShortName,
+  purchaseUnitShortName: b.purchaseUnitShortName,
+  purchaseUnitFactor: b.purchaseUnitFactor,
+})}
                   </td>
                   <td className="text-right px-4 py-3">
                     {formatMoney(b.purchasePrice)}
@@ -151,7 +153,12 @@ export function PurchaseDetailPage() {
                           : ""
                       }
                     >
-                      {formatQuantity(b.remainingQuantity)}
+                      {/* {formatQuantity(b.remainingQuantity)} */}
+                      {formatStockDisplay(b.remainingQuantity, {
+  baseUnitShortName: b.baseUnitShortName,
+  purchaseUnitShortName: b.purchaseUnitShortName,
+  purchaseUnitFactor: b.purchaseUnitFactor,
+})}
                     </span>
                   </td>
                   <td className="text-right px-4 py-3 font-medium">

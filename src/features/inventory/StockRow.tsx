@@ -1,6 +1,6 @@
 import { Package, AlertTriangle, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { formatMoney, formatQuantity } from "@/lib/format";
+import { formatMoney, formatStockDisplay } from "@/lib/format";
 import type { StockItem } from "../../../electron/shared/types/inventory";
 
 type Props = {
@@ -13,6 +13,12 @@ export function StockRow({ item, onShowPriceHistory }: Props) {
   const isLow =
     item.lowStockThreshold !== null &&
     item.currentStock <= item.lowStockThreshold;
+
+  const stockDisplay = formatStockDisplay(item.currentStock, {
+    baseUnitShortName: item.baseUnitShortName,
+    purchaseUnitShortName: item.purchaseUnitShortName,
+    purchaseUnitFactor: item.purchaseUnitFactor,
+  });
 
   return (
     <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4">
@@ -53,7 +59,14 @@ export function StockRow({ item, onShowPriceHistory }: Props) {
             {item.activeBatchCount !== 1 ? "es" : ""}
           </span>
           {item.lowStockThreshold !== null && (
-            <span>Threshold: {formatQuantity(item.lowStockThreshold)}</span>
+            <span>
+              Threshold:{" "}
+              {formatStockDisplay(item.lowStockThreshold, {
+                baseUnitShortName: item.baseUnitShortName,
+                purchaseUnitShortName: item.purchaseUnitShortName,
+                purchaseUnitFactor: item.purchaseUnitFactor,
+              })}
+            </span>
           )}
         </div>
       </div>
@@ -80,10 +93,7 @@ export function StockRow({ item, onShowPriceHistory }: Props) {
                 : ""
             }`}
           >
-            {formatQuantity(item.currentStock)}
-            <span className="text-xs font-normal text-[rgb(var(--muted-fg))] ml-1">
-              {item.baseUnitShortName}
-            </span>
+            {stockDisplay}
           </p>
         </div>
 

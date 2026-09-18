@@ -42,12 +42,6 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("unit:delete", id),
     restore: (id) => ipcRenderer.invoke("unit:restore", id),
   },
-  unitConversion: {
-    list: (filter) => ipcRenderer.invoke("unitConversion:list", filter),
-    create: (input) => ipcRenderer.invoke("unitConversion:create", input),
-    update: (input) => ipcRenderer.invoke("unitConversion:update", input),
-    delete: (id) => ipcRenderer.invoke("unitConversion:delete", id),
-  },
   product: {
     list: (query) => ipcRenderer.invoke("product:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("product:count", query ?? {}),
@@ -94,6 +88,8 @@ const api: AppApi = {
     create: (input) => ipcRenderer.invoke("bill:create", input),
     finalize: (id) => ipcRenderer.invoke("bill:finalize", id),
     deleteDraft: (id) => ipcRenderer.invoke("bill:deleteDraft", id),
+    previewFifoCost: (input) =>
+      ipcRenderer.invoke("bill:previewFifoCost", input),
   },
   payment: {
     list: (query) => ipcRenderer.invoke("payment:list", query ?? {}),

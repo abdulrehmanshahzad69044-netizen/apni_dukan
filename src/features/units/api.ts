@@ -1,10 +1,7 @@
 import type {
-  CreateUnitConversionInput,
   CreateUnitInput,
   Unit,
-  UnitConversion,
   UnitListQuery,
-  UpdateUnitConversionInput,
   UpdateUnitInput,
 } from "../../../electron/shared/types/unit";
 
@@ -39,23 +36,5 @@ export const unitApi = {
 
   async restore(id: number): Promise<void> {
     await window.api.unit.restore(id);
-  },
-};
-
-export const unitConversionApi = {
-  async list(filter?: { unitId?: number }): Promise<UnitConversion[]> {
-    return window.api.unitConversion.list(filter);
-  },
-
-  async create(input: CreateUnitConversionInput): Promise<UnitConversion> {
-    return window.api.unitConversion.create(input);
-  },
-
-  async update(input: UpdateUnitConversionInput): Promise<UnitConversion> {
-    return window.api.unitConversion.update(input);
-  },
-
-  async remove(id: number): Promise<void> {
-    await window.api.unitConversion.delete(id);
   },
 };

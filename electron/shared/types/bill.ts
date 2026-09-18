@@ -7,12 +7,12 @@ export type Bill = {
   billNumber: string;
   customerId: number | null;
   customerName: string | null;
-  billDate: number; // unix seconds
-  totalAmount: number; // paisa
+  billDate: number;
+  totalAmount: number;
   paidAmount: number;
   remainingAmount: number;
-  cogs: number; // paisa
-  grossProfit: number; // totalAmount − cogs (computed)
+  cogs: number;
+  grossProfit: number;
   status: "draft" | "held" | "finalized" | "cancelled" | "returned";
   remarks: string | null;
   itemCount: number;
@@ -26,37 +26,31 @@ export type BillItem = {
   productName: string;
   variantName: string;
   baseUnitShortName: string;
+  purchaseUnitShortName: string | null;
+  purchaseUnitFactor: number | null;
   unitId: number;
   unitName: string;
-  quantity: number; // milli-units
-  unitPrice: number; // paisa
-  lineTotal: number; // paisa
-  lineCogs: number; // paisa
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  lineCogs: number;
 };
 
 export type BillItemFifoEntry = {
   id: number;
   batchId: number;
-  batchPurchaseDate: number; // unix seconds
-  quantityConsumed: number; // milli-units
-  unitCost: number; // paisa
+  batchPurchaseDate: number;
+  quantityConsumed: number;
+  unitCost: number;
 };
 
 export type BillDetail = Bill & {
   items: BillItem[];
-  fifo: Record<number, BillItemFifoEntry[]>; // keyed by billItemId
+  fifo: Record<number, BillItemFifoEntry[]>;
 };
 
-// ---------- Shared optional-string helper ----------
+// ---------- Input ----------
 
-/**
- * Bulletproof optional string:
- *   - accepts string | null | undefined
- *   - trims and converts empty/null/undefined → undefined
- *   - enforces max length
- *
- * Uses a union so it can NEVER fail on `undefined` or `null`.
- */
 const optionalTrimmedString = (max: number) =>
   z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
     if (v === null || v === undefined) return undefined;
@@ -66,13 +60,11 @@ const optionalTrimmedString = (max: number) =>
     return t;
   });
 
-// ---------- Input schemas ----------
-
 export const billLineSchema = z.object({
   variantId: z.number().int().positive(),
   unitId: z.number().int().positive(),
-  quantity: z.number().int().positive("Quantity must be positive"), // milli-units
-  unitPrice: z.number().int().nonnegative("Price cannot be negative"), // paisa
+  quantity: z.number().int().positive("Quantity must be positive"),
+  unitPrice: z.number().int().nonnegative("Price cannot be negative"),
 });
 
 export type BillLineInput = z.infer<typeof billLineSchema>;
@@ -91,8 +83,6 @@ export const createBillSchema = z.object({
 
 export type CreateBillInput = z.infer<typeof createBillSchema>;
 
-// ---------- Query schema ----------
-
 export const billListQuerySchema = z.object({
   search: z.string().trim().optional(),
   customerId: z.number().int().positive().optional(),
@@ -106,3 +96,36 @@ export const billListQuerySchema = z.object({
 });
 
 export type BillListQuery = z.infer<typeof billListQuerySchema>;
+
+// ---------- FIFO Cost Preview ----------
+
+/**
+ * Preview of what FIFO will consume for a given variant + quantity.
+ * Used by the Bill Entry page to show the "cost" reference (not printed).
+ */
+export type FifoCostPreview = {
+  /** Total base-unit quantity that will be consumed */
+  quantity: number; // milli-units
+  /** Weighted average cost per base unit (paisa) */
+  avgCostPerBaseUnit: number;
+  /** Total cost for the requested quantity (paisa) */
+  totalCost: number;
+  /** Breakdown of what batches will be consumed (oldest first) */
+  batches: Array<{
+    batchId: number;
+    purchaseDate: number; // unix seconds
+    quantityConsumed: number; // milli-units
+    unitCost: number; // paisa
+  }>;
+  /** True if there's not enough stock to fulfill */
+  insufficient: boolean;
+  /** Available quantity in base units (milli-units) */
+  availableQuantity: number;
+};
+
+export const fifoCostPreviewSchema = z.object({
+  variantId: z.number().int().positive(),
+  quantity: z.number().int().positive(), // milli-units, base unit
+});
+
+export type FifoCostPreviewInput = z.infer<typeof fifoCostPreviewSchema>;

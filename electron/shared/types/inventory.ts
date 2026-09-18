@@ -9,6 +9,11 @@ export type StockItem = {
   baseUnitName: string;
   baseUnitShortName: string;
 
+  purchaseUnitId: number | null;
+  purchaseUnitName: string | null;
+  purchaseUnitShortName: string | null;
+  purchaseUnitFactor: number | null;
+
   currentStock: number;
   avgCost: number;
   stockValue: number;
@@ -32,18 +37,15 @@ export const stockListQuerySchema = z.object({
 
 export type StockListQuery = z.infer<typeof stockListQuerySchema>;
 
-/**
- * One row in a variant's price history — one purchase batch.
- */
 export type PriceHistoryEntry = {
   batchId: number;
   purchaseId: number | null;
   purchaseNumber: string | null;
   companyName: string | null;
-  purchaseDate: number; // unix seconds
-  purchasePrice: number; // paisa
-  quantityPurchased: number; // milli-units
-  remainingQuantity: number; // milli-units
+  purchaseDate: number;
+  purchasePrice: number;
+  quantityPurchased: number;
+  remainingQuantity: number;
   suggestedRetailPrice: number | null;
   suggestedWholesalePrice: number | null;
 };

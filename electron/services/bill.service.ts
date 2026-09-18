@@ -15,6 +15,7 @@ import type {
   BillItemFifoEntry,
   BillListQuery,
   CreateBillInput,
+  FifoCostPreview,
 } from "../shared/types/bill";
 
 // ---------- Helpers ----------
@@ -453,12 +454,15 @@ export const billService = {
         productName: sql<string>`p.name`,
         variantName: sql<string>`v.name`,
         baseUnitShortName: sql<string>`u.short_name`,
+        purchaseUnitShortName: sql<string | null>`pu.short_name`,
+        purchaseUnitFactor: sql<number | null>`v.purchase_unit_factor`,
         unitName: sql<string>`unit.name`,
       })
       .from(billItems)
       .innerJoin(sql`variants v`, sql`v.id = ${billItems.variantId}`)
       .innerJoin(sql`products p`, sql`p.id = v.product_id`)
       .innerJoin(sql`units u`, sql`u.id = v.base_unit_id`)
+      .leftJoin(sql`units pu`, sql`pu.id = v.purchase_unit_id`)
       .innerJoin(sql`units unit`, sql`unit.id = ${billItems.unitId}`)
       .where(eq(billItems.billId, id))
       .orderBy(asc(billItems.id));
@@ -500,6 +504,8 @@ export const billService = {
       productName: i.productName,
       variantName: i.variantName,
       baseUnitShortName: i.baseUnitShortName,
+      purchaseUnitShortName: i.purchaseUnitShortName,
+      purchaseUnitFactor: i.purchaseUnitFactor,
       unitId: i.unitId,
       unitName: i.unitName,
       quantity: i.quantity,
@@ -592,5 +598,69 @@ export const billService = {
       .from(bills)
       .where(conditions.length > 0 ? and(...conditions) : undefined);
     return row?.count ?? 0;
+  },
+
+    /**
+   * Preview the FIFO cost for a given variant + base-unit quantity.
+   * Does NOT consume stock. Pure read-only.
+   */
+  async previewFifoCost(input: {
+    variantId: number;
+    quantity: number;
+  }): Promise<FifoCostPreview> {
+    const db = getDb();
+
+    const batches = await db
+      .select()
+      .from(stockBatches)
+      .where(
+        and(
+          eq(stockBatches.variantId, input.variantId),
+          sql`${stockBatches.remainingQuantity} > 0`
+        )
+      )
+      .orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id));
+
+    const availableQuantity = batches.reduce(
+      (sum, b) => sum + b.remainingQuantity,
+      0
+    );
+    const insufficient = availableQuantity < input.quantity;
+
+    let remaining = input.quantity;
+    let totalCost = 0;
+    const consumed: FifoCostPreview["batches"] = [];
+
+    for (const batch of batches) {
+      if (remaining <= 0) break;
+      const consume = Math.min(remaining, batch.remainingQuantity);
+      remaining -= consume;
+
+      const costContribution = Math.round(
+        (consume * batch.purchasePrice) / 1000
+      );
+      totalCost += costContribution;
+
+      consumed.push({
+        batchId: batch.id,
+        purchaseDate: Math.floor(batch.purchaseDate.getTime() / 1000),
+        quantityConsumed: consume,
+        unitCost: batch.purchasePrice,
+      });
+    }
+
+    const avgCostPerBaseUnit =
+      input.quantity > 0
+        ? Math.round((totalCost / (input.quantity / 1000)))
+        : 0;
+
+    return {
+      quantity: input.quantity,
+      avgCostPerBaseUnit,
+      totalCost,
+      batches: consumed,
+      insufficient,
+      availableQuantity,
+    };
   },
 };

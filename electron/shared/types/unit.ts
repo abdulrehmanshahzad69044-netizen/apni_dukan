@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-// ---------- Unit ----------
-
 export type Unit = {
   id: number;
   name: string;
@@ -30,51 +28,3 @@ export const unitListQuerySchema = z.object({
 export type CreateUnitInput = z.infer<typeof createUnitSchema>;
 export type UpdateUnitInput = z.infer<typeof updateUnitSchema>;
 export type UnitListQuery = z.infer<typeof unitListQuerySchema>;
-
-// ---------- Unit Conversion ----------
-
-/**
- * Conversion DTO as seen by the renderer.
- * `factor` is milli-factor (integer × 1000). 12000 means 12.
- */
-export type UnitConversion = {
-  id: number;
-  fromUnitId: number;
-  toUnitId: number;
-  fromUnitName: string;
-  fromUnitShortName: string;
-  toUnitName: string;
-  toUnitShortName: string;
-  factor: number;
-  createdAt: number;
-  updatedAt: number;
-};
-
-export const createUnitConversionSchema = z
-  .object({
-    fromUnitId: z.number().int().positive(),
-    toUnitId: z.number().int().positive(),
-    factor: z
-      .number()
-      .positive("Factor must be positive")
-      .max(1_000_000_000, "Factor too large"),
-  })
-  .refine((v) => v.fromUnitId !== v.toUnitId, {
-    message: "From and To units must be different",
-    path: ["toUnitId"],
-  });
-
-export const updateUnitConversionSchema = z.object({
-  id: z.number().int().positive(),
-  factor: z
-    .number()
-    .positive("Factor must be positive")
-    .max(1_000_000_000, "Factor too large"),
-});
-
-export type CreateUnitConversionInput = z.infer<
-  typeof createUnitConversionSchema
->;
-export type UpdateUnitConversionInput = z.infer<
-  typeof updateUnitConversionSchema
->;

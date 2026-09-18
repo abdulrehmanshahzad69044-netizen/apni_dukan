@@ -3,6 +3,7 @@ import type {
   BillDetail,
   BillListQuery,
   CreateBillInput,
+  FifoCostPreview,
 } from "../../../electron/shared/types/bill";
 
 type Query = Partial<BillListQuery>;
@@ -34,5 +35,12 @@ export const billApi = {
 
   async deleteDraft(id: number): Promise<void> {
     await window.api.bill.deleteDraft(id);
+  },
+
+  async previewFifoCost(input: {
+    variantId: number;
+    quantity: number;
+  }): Promise<FifoCostPreview> {
+    return window.api.bill.previewFifoCost(input);
   },
 };

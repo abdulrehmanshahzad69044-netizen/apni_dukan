@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6937c3b9-82c8-4525-a181-70339d0ecccb",
+  "id": "bdb08c8a-7355-4402-9317-3cb350445fd3",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "settings": {
@@ -237,110 +237,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "unit_conversions": {
-      "name": "unit_conversions",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "from_unit_id": {
-          "name": "from_unit_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "to_unit_id": {
-          "name": "to_unit_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "factor": {
-          "name": "factor",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch())"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(unixepoch())"
-        }
-      },
-      "indexes": {
-        "unit_conversions_from_idx": {
-          "name": "unit_conversions_from_idx",
-          "columns": [
-            "from_unit_id"
-          ],
-          "isUnique": false
-        },
-        "unit_conversions_to_idx": {
-          "name": "unit_conversions_to_idx",
-          "columns": [
-            "to_unit_id"
-          ],
-          "isUnique": false
-        },
-        "unit_conversions_pair_unique": {
-          "name": "unit_conversions_pair_unique",
-          "columns": [
-            "from_unit_id",
-            "to_unit_id"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "unit_conversions_from_unit_id_units_id_fk": {
-          "name": "unit_conversions_from_unit_id_units_id_fk",
-          "tableFrom": "unit_conversions",
-          "tableTo": "units",
-          "columnsFrom": [
-            "from_unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "unit_conversions_to_unit_id_units_id_fk": {
-          "name": "unit_conversions_to_unit_id_units_id_fk",
-          "tableFrom": "unit_conversions",
-          "tableTo": "units",
-          "columnsFrom": [
-            "to_unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "units": {
       "name": "units",
       "columns": {
@@ -544,6 +440,20 @@
           "notNull": true,
           "autoincrement": false
         },
+        "purchase_unit_id": {
+          "name": "purchase_unit_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "purchase_unit_factor": {
+          "name": "purchase_unit_factor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "low_stock_threshold": {
           "name": "low_stock_threshold",
           "type": "integer",
@@ -590,6 +500,13 @@
           ],
           "isUnique": false
         },
+        "variants_purchase_unit_idx": {
+          "name": "variants_purchase_unit_idx",
+          "columns": [
+            "purchase_unit_id"
+          ],
+          "isUnique": false
+        },
         "variants_name_idx": {
           "name": "variants_name_idx",
           "columns": [
@@ -618,6 +535,19 @@
           "tableTo": "units",
           "columnsFrom": [
             "base_unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "variants_purchase_unit_id_units_id_fk": {
+          "name": "variants_purchase_unit_id_units_id_fk",
+          "tableFrom": "variants",
+          "tableTo": "units",
+          "columnsFrom": [
+            "purchase_unit_id"
           ],
           "columnsTo": [
             "id"

@@ -27,7 +27,7 @@ import { KpiTile } from "./KpiTile";
 import { useDashboard } from "./hooks";
 import {
   formatMoney,
-  formatQuantity,
+  formatStockDisplay,
   formatDate,
   paisaToRupees,
 } from "@/lib/format";
@@ -334,10 +334,11 @@ function LowStockCard({
                       : "text-amber-600 dark:text-amber-400"
                   }`}
                 >
-                  {formatQuantity(item.currentStock)}{" "}
-                  <span className="text-xs font-normal text-[rgb(var(--muted-fg))]">
-                    {item.baseUnitShortName}
-                  </span>
+                  {formatStockDisplay(item.currentStock, {
+                    baseUnitShortName: item.baseUnitShortName,
+                    purchaseUnitShortName: item.purchaseUnitShortName,
+                    purchaseUnitFactor: item.purchaseUnitFactor,
+                  })}
                 </p>
               </div>
             </div>

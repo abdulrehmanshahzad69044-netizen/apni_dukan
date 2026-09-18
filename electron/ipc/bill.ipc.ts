@@ -1,9 +1,6 @@
 import { ipcMain } from "electron";
 import { billService } from "../services/bill.service";
-import {
-  billListQuerySchema,
-  createBillSchema,
-} from "../shared/types/bill";
+import { billListQuerySchema, createBillSchema, fifoCostPreviewSchema } from "../shared/types/bill";
 
 export function registerBillIpc() {
   ipcMain.handle("bill:list", async (_e, rawQuery: unknown) => {
@@ -34,5 +31,10 @@ export function registerBillIpc() {
   ipcMain.handle("bill:deleteDraft", async (_e, id: number) => {
     await billService.deleteDraft(id);
     return { ok: true };
+  });
+
+    ipcMain.handle("bill:previewFifoCost", async (_e, rawInput: unknown) => {
+    const input = fifoCostPreviewSchema.parse(rawInput);
+    return billService.previewFifoCost(input);
   });
 }

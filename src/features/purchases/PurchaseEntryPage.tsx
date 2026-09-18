@@ -1,25 +1,3 @@
-// import { useMemo, useState } from "react";
-// import { useNavigate } from "react-router-dom";
-// import { Plus, Trash2, Save, X, Search } from "lucide-react";
-// import { Page } from "@/components/ui/Page";
-// import { Button } from "@/components/ui/Button";
-// import { Input } from "@/components/ui/Input";
-// import { Label } from "@/components/ui/Label";
-// import { EmptyState } from "@/components/ui/EmptyState";
-// import { toast } from "@/lib/toast";
-// import {
-//   formatMoney,
-//   rupeesToPaisa,
-//   paisaToRupees,
-//   quantityToMilli,
-//   formatQuantity,
-//   toDateInputValue,
-// } from "@/lib/format";
-// import { purchaseApi } from "./api";
-// import { useCompanies } from "../companies/hooks";
-// import { useVariants } from "../variants/hooks";
-// import type { Variant } from "../../../electron/shared/types/variant";
-
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, Save, X, Search } from "lucide-react";
@@ -36,6 +14,12 @@ import {
   formatQuantity,
   toDateInputValue,
 } from "@/lib/format";
+import {
+  getUnitOptions,
+  enteredQtyToBase,
+  baseUnitPriceFromEntered,
+  defaultPurchaseUnit,
+} from "@/lib/units";
 import { purchaseApi } from "./api";
 import { useCompanies } from "../companies/hooks";
 import { useVariants } from "../variants/hooks";
@@ -46,15 +30,39 @@ type LineItem = {
   variantId: number;
   productName: string;
   variantName: string;
+  baseUnitId: number;
+  baseUnitName: string;
   baseUnitShortName: string;
-  quantity: string; // user input as string
-  purchasePrice: string; // user input in rupees
-  suggestedRetailPrice: string; // user input in rupees
+  purchaseUnitId: number | null;
+  purchaseUnitName: string | null;
+  purchaseUnitShortName: string | null;
+  purchaseUnitFactor: number | null;
+
+  enteredUnitId: number;
+
+  quantity: string;
+  purchasePrice: string;
+  suggestedRetailPrice: string;
   suggestedWholesalePrice: string;
 };
 
 function makeKey() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * Convert a price from one unit to another by ratio.
+ * "Rs. 70 per Piece" → "Rs. 1680 per Carton" (ratio 24/1)
+ * "Rs. 1680 per Carton" → "Rs. 70 per Piece" (ratio 1/24)
+ */
+function convertPriceByRatio(price: string, ratio: number): string {
+  const n = Number(price);
+  if (!Number.isFinite(n) || n === 0) return price;
+  const result = n * ratio;
+  // Format with up to 2 decimals, strip trailing zeros
+  return Number.isInteger(result)
+    ? String(result)
+    : result.toFixed(2).replace(/\.?0+$/, "");
 }
 
 export function PurchaseEntryPage() {
@@ -93,7 +101,6 @@ export function PurchaseEntryPage() {
   // ---------- Actions ----------
 
   function addVariant(v: Variant) {
-    // Prevent duplicates
     if (lines.some((l) => l.variantId === v.id)) {
       toast.error(`${v.productName} — ${v.name} is already in the list`);
       return;
@@ -105,7 +112,14 @@ export function PurchaseEntryPage() {
         variantId: v.id,
         productName: v.productName,
         variantName: v.name,
+        baseUnitId: v.baseUnitId,
+        baseUnitName: v.baseUnitName,
         baseUnitShortName: v.baseUnitShortName,
+        purchaseUnitId: v.purchaseUnitId,
+        purchaseUnitName: v.purchaseUnitName,
+        purchaseUnitShortName: v.purchaseUnitShortName,
+        purchaseUnitFactor: v.purchaseUnitFactor,
+        enteredUnitId: defaultPurchaseUnit(v),
         quantity: "1",
         purchasePrice: "0",
         suggestedRetailPrice: "0",
@@ -121,12 +135,48 @@ export function PurchaseEntryPage() {
     );
   }
 
+  /**
+   * Change the unit for a line + convert all prices by the factor ratio.
+   */
+  function changeUnit(key: string, newUnitId: number) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        if (l.enteredUnitId === newUnitId) return l;
+
+        const unitOptions = getUnitOptions(l);
+        const oldUnit =
+          unitOptions.find((u) => u.unitId === l.enteredUnitId) ??
+          unitOptions[0];
+        const newUnit =
+          unitOptions.find((u) => u.unitId === newUnitId) ?? unitOptions[0];
+
+        // Ratio: how much bigger/smaller the new unit is vs the old one.
+        // If old = Piece (factor 1), new = Carton (factor 24), ratio = 24.
+        const ratio = newUnit.factor / oldUnit.factor;
+
+        return {
+          ...l,
+          enteredUnitId: newUnitId,
+          purchasePrice: convertPriceByRatio(l.purchasePrice, ratio),
+          suggestedRetailPrice: convertPriceByRatio(
+            l.suggestedRetailPrice,
+            ratio
+          ),
+          suggestedWholesalePrice: convertPriceByRatio(
+            l.suggestedWholesalePrice,
+            ratio
+          ),
+        };
+      })
+    );
+  }
+
   function removeLine(key: string) {
     setLines((prev) => prev.filter((l) => l.key !== key));
   }
 
   async function handleSave() {
-    // Validation
     if (companyId === "") {
       toast.error("Select a company");
       return;
@@ -155,19 +205,39 @@ export function PurchaseEntryPage() {
         purchaseDate: new Date(purchaseDate),
         paidAmount: paidPaisa,
         remarks: remarks.trim() || undefined,
-        lines: lines.map((l) => ({
-          variantId: l.variantId,
-          quantity: quantityToMilli(Number(l.quantity)),
-          purchasePrice: rupeesToPaisa(Number(l.purchasePrice)),
-          suggestedRetailPrice:
-            Number(l.suggestedRetailPrice) > 0
-              ? rupeesToPaisa(Number(l.suggestedRetailPrice))
-              : null,
-          suggestedWholesalePrice:
-            Number(l.suggestedWholesalePrice) > 0
-              ? rupeesToPaisa(Number(l.suggestedWholesalePrice))
-              : null,
-        })),
+        lines: lines.map((l) => {
+          const unitOptions = getUnitOptions(l);
+          const enteredUnit =
+            unitOptions.find((u) => u.unitId === l.enteredUnitId) ??
+            unitOptions[0];
+          const factor = enteredUnit.factor;
+
+          const qtyInBase = enteredQtyToBase(Number(l.quantity), factor);
+          const basePriceRupees = baseUnitPriceFromEntered(
+            Number(l.quantity),
+            Number(l.purchasePrice),
+            factor
+          );
+          const basePricePaisa = rupeesToPaisa(basePriceRupees);
+
+          const retailBaseRupees = Number(l.suggestedRetailPrice) / factor;
+          const wholesaleBaseRupees =
+            Number(l.suggestedWholesalePrice) / factor;
+
+          return {
+            variantId: l.variantId,
+            quantity: quantityToMilli(qtyInBase),
+            purchasePrice: basePricePaisa,
+            suggestedRetailPrice:
+              Number(l.suggestedRetailPrice) > 0
+                ? rupeesToPaisa(retailBaseRupees)
+                : null,
+            suggestedWholesalePrice:
+              Number(l.suggestedWholesalePrice) > 0
+                ? rupeesToPaisa(wholesaleBaseRupees)
+                : null,
+          };
+        }),
       });
       toast.success("Purchase recorded");
       navigate("/purchases");
@@ -199,7 +269,7 @@ export function PurchaseEntryPage() {
         </div>
       }
     >
-      {/* Header fields */}
+      {/* Header */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="space-y-1.5">
           <Label>Company *</Label>
@@ -240,7 +310,7 @@ export function PurchaseEntryPage() {
         </div>
       </div>
 
-      {/* Variant search + add */}
+      {/* Search */}
       <div className="rounded-xl border bg-[rgb(var(--card))] p-4 mb-6">
         <Label className="mb-2 block">Add Item</Label>
         <div className="relative">
@@ -272,6 +342,12 @@ export function PurchaseEntryPage() {
                     </div>
                     <div className="text-xs text-[rgb(var(--muted-fg))]">
                       {v.name} · {v.baseUnitShortName}
+                      {v.purchaseUnitShortName && v.purchaseUnitFactor && (
+                        <span className="text-blue-600 dark:text-blue-400 ml-2">
+                          · 1 {v.purchaseUnitShortName} ={" "}
+                          {v.purchaseUnitFactor} {v.baseUnitShortName}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <Plus className="w-4 h-4 text-[rgb(var(--muted-fg))] shrink-0" />
@@ -282,7 +358,7 @@ export function PurchaseEntryPage() {
         )}
       </div>
 
-      {/* Line items */}
+      {/* Lines */}
       {lines.length === 0 ? (
         <EmptyState
           icon={<Plus className="w-6 h-6" />}
@@ -292,20 +368,40 @@ export function PurchaseEntryPage() {
       ) : (
         <div className="space-y-3 mb-6">
           {lines.map((l) => {
-            const lineTotal = rupeesToPaisa(
+            const unitOptions = getUnitOptions(l);
+            const enteredUnit =
+              unitOptions.find((u) => u.unitId === l.enteredUnitId) ??
+              unitOptions[0];
+            const factor = enteredUnit.factor;
+
+            const enteredTotal = rupeesToPaisa(
               (Number(l.quantity) || 0) * (Number(l.purchasePrice) || 0)
             );
+
+            const qtyInBase = (Number(l.quantity) || 0) * factor;
+            const basePrice = baseUnitPriceFromEntered(
+              Number(l.quantity) || 0,
+              Number(l.purchasePrice) || 0,
+              factor
+            );
+            const showBasePreview = factor > 1;
+
             return (
               <div
                 key={l.key}
                 className="rounded-xl border bg-[rgb(var(--card))] p-4"
               >
-                {/* Header */}
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="min-w-0">
                     <h4 className="font-medium truncate">{l.productName}</h4>
                     <p className="text-xs text-[rgb(var(--muted-fg))]">
-                      {l.variantName} · {l.baseUnitShortName}
+                      {l.variantName}
+                      {l.purchaseUnitFactor && l.purchaseUnitShortName && (
+                        <span className="ml-2 text-blue-600 dark:text-blue-400">
+                          1 {l.purchaseUnitShortName} ={" "}
+                          {l.purchaseUnitFactor} {l.baseUnitShortName}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <Button
@@ -318,8 +414,7 @@ export function PurchaseEntryPage() {
                   </Button>
                 </div>
 
-                {/* Fields grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Quantity</Label>
                     <Input
@@ -334,7 +429,26 @@ export function PurchaseEntryPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-xs">Purchase Price (Rs.)</Label>
+                    <Label className="text-xs">Unit</Label>
+                    <select
+                      value={l.enteredUnitId}
+                      onChange={(e) =>
+                        changeUnit(l.key, Number(e.target.value))
+                      }
+                      className="w-full h-10 px-3 rounded-lg border bg-[rgb(var(--bg))] text-sm"
+                    >
+                      {unitOptions.map((u) => (
+                        <option key={u.unitId} value={u.unitId}>
+                          {u.unitShortName} ({u.unitName})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      Price per {enteredUnit.unitShortName} (Rs.)
+                    </Label>
                     <Input
                       type="number"
                       min="0"
@@ -347,7 +461,9 @@ export function PurchaseEntryPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-xs">Retail Price (Rs.)</Label>
+                    <Label className="text-xs">
+                      Retail per {enteredUnit.unitShortName} (Rs.)
+                    </Label>
                     <Input
                       type="number"
                       min="0"
@@ -362,7 +478,9 @@ export function PurchaseEntryPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-xs">Wholesale Price (Rs.)</Label>
+                    <Label className="text-xs">
+                      Wholesale per {enteredUnit.unitShortName} (Rs.)
+                    </Label>
                     <Input
                       type="number"
                       min="0"
@@ -377,14 +495,23 @@ export function PurchaseEntryPage() {
                   </div>
                 </div>
 
-                {/* Line total */}
+                {showBasePreview && Number(l.quantity) > 0 && (
+                  <div className="mt-2 text-xs text-[rgb(var(--muted-fg))]">
+                    = {formatQuantity(quantityToMilli(qtyInBase))}{" "}
+                    {l.baseUnitShortName} @{" "}
+                    {formatMoney(rupeesToPaisa(basePrice))} /{" "}
+                    {l.baseUnitShortName}
+                  </div>
+                )}
+
                 <div className="mt-3 pt-3 border-t flex items-center justify-between text-sm">
                   <span className="text-[rgb(var(--muted-fg))]">
-                    Qty {formatQuantity(quantityToMilli(Number(l.quantity) || 0))} × Rs.{" "}
+                    {Number(l.quantity || 0).toFixed(2)}{" "}
+                    {enteredUnit.unitShortName} × Rs.{" "}
                     {Number(l.purchasePrice || 0).toFixed(2)}
                   </span>
                   <span className="font-semibold">
-                    {formatMoney(lineTotal)}
+                    {formatMoney(enteredTotal)}
                   </span>
                 </div>
               </div>
@@ -393,7 +520,7 @@ export function PurchaseEntryPage() {
         </div>
       )}
 
-      {/* Totals + payment */}
+      {/* Totals */}
       <div className="rounded-xl border bg-[rgb(var(--card))] p-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-3">
@@ -402,9 +529,7 @@ export function PurchaseEntryPage() {
               <span className="font-medium">{formatMoney(subtotal)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-[rgb(var(--muted-fg))]">
-                Items count
-              </span>
+              <span className="text-[rgb(var(--muted-fg))]">Items count</span>
               <span className="font-medium">{lines.length}</span>
             </div>
           </div>

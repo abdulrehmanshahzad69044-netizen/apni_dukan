@@ -17,6 +17,7 @@ import {
   formatMoney,
   formatQuantity,
   formatDate,
+  formatStockDisplay,
   paisaToRupees,
 } from "@/lib/format";
 import { toast } from "@/lib/toast";
@@ -29,6 +30,8 @@ type Props = {
   productName: string;
   variantName: string;
   baseUnitShortName: string;
+  purchaseUnitShortName?: string | null;
+  purchaseUnitFactor?: number | null;
 };
 
 export function PriceHistoryModal({
@@ -38,6 +41,8 @@ export function PriceHistoryModal({
   productName,
   variantName,
   baseUnitShortName,
+  purchaseUnitShortName,
+  purchaseUnitFactor,
 }: Props) {
   const [entries, setEntries] = useState<PriceHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,7 +71,12 @@ export function PriceHistoryModal({
     };
   }, [open, variantId]);
 
-  // Chart data — one point per purchase
+  const unitInfo = {
+    baseUnitShortName,
+    purchaseUnitShortName,
+    purchaseUnitFactor,
+  };
+
   const chartData = entries.map((e) => ({
     date: formatDate(e.purchaseDate),
     price: paisaToRupees(e.purchasePrice),
@@ -90,11 +100,10 @@ export function PriceHistoryModal({
         />
       ) : (
         <div className="space-y-5">
-          {/* Chart */}
           {entries.length >= 2 && (
             <div className="rounded-lg border bg-[rgb(var(--bg))] p-3">
               <p className="text-xs text-[rgb(var(--muted-fg))] mb-2">
-                Purchase price over time (Rs.)
+                Purchase price over time (Rs. per {baseUnitShortName})
               </p>
               <div style={{ width: "100%", height: 200 }}>
                 <ResponsiveContainer>
@@ -133,7 +142,6 @@ export function PriceHistoryModal({
             </div>
           )}
 
-          {/* Table */}
           <div className="rounded-lg border overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-[rgb(var(--muted))] text-[rgb(var(--muted-fg))]">
@@ -168,7 +176,7 @@ export function PriceHistoryModal({
                       {formatMoney(e.purchasePrice)}
                     </td>
                     <td className="text-right px-3 py-2">
-                      {formatQuantity(e.quantityPurchased)}
+                      {formatStockDisplay(e.quantityPurchased, unitInfo)}
                     </td>
                     <td className="text-right px-3 py-2">
                       <span
@@ -178,7 +186,7 @@ export function PriceHistoryModal({
                             : ""
                         }
                       >
-                        {formatQuantity(e.remainingQuantity)}
+                        {formatStockDisplay(e.remainingQuantity, unitInfo)}
                       </span>
                     </td>
                     <td className="text-right px-3 py-2">
@@ -200,3 +208,6 @@ export function PriceHistoryModal({
     </Modal>
   );
 }
+
+// Silence unused import
+void formatQuantity;

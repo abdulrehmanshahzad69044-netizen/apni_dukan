@@ -17,12 +17,9 @@ import type {
   UpdateCategoryInput,
 } from "./category";
 import type {
-  CreateUnitConversionInput,
   CreateUnitInput,
   Unit,
-  UnitConversion,
   UnitListQuery,
-  UpdateUnitConversionInput,
   UpdateUnitInput,
 } from "./unit";
 import type {
@@ -53,11 +50,13 @@ import type {
   CreateAdjustmentInput,
   StockAdjustment,
 } from "./adjustment";
+
 import type {
   Bill,
   BillDetail,
   BillListQuery,
   CreateBillInput,
+  FifoCostPreview,
 } from "./bill";
 import type {
   CreatePaymentInput,
@@ -157,12 +156,6 @@ export type AppApi = {
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };
-  unitConversion: {
-    list: (filter?: { unitId?: number }) => Promise<UnitConversion[]>;
-    create: (input: CreateUnitConversionInput) => Promise<UnitConversion>;
-    update: (input: UpdateUnitConversionInput) => Promise<UnitConversion>;
-    delete: (id: number) => Promise<{ ok: true }>;
-  };
   product: {
     list: (query?: Partial<ProductListQuery>) => Promise<Product[]>;
     count: (
@@ -232,6 +225,10 @@ export type AppApi = {
     create: (input: CreateBillInput) => Promise<BillDetail>;
     finalize: (id: number) => Promise<BillDetail>;
     deleteDraft: (id: number) => Promise<{ ok: true }>;
+    previewFifoCost: (input: {
+      variantId: number;
+      quantity: number;
+    }) => Promise<FifoCostPreview>;
   };
   payment: {
     list: (query?: Partial<PaymentListQuery>) => Promise<Payment[]>;

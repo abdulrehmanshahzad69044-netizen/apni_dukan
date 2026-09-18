@@ -1,4 +1,4 @@
-import { Package, Pencil, Trash2, Ruler, AlertTriangle } from "lucide-react";
+import { Package, Pencil, Trash2, Ruler, AlertTriangle, Boxes } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatQuantity } from "@/lib/format";
 import type { Variant } from "../../../electron/shared/types/variant";
@@ -10,6 +10,8 @@ type Props = {
 };
 
 export function VariantRow({ variant, onEdit, onDelete }: Props) {
+  const hasBulk = variant.purchaseUnitId && variant.purchaseUnitFactor;
+
   return (
     <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 hover:shadow-sm transition-shadow">
       <div className="w-10 h-10 rounded-lg bg-[rgb(var(--muted))] flex items-center justify-center shrink-0">
@@ -29,11 +31,19 @@ export function VariantRow({ variant, onEdit, onDelete }: Props) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-4 mt-1 text-xs text-[rgb(var(--muted-fg))]">
+        <div className="flex items-center gap-4 mt-1 text-xs text-[rgb(var(--muted-fg))] flex-wrap">
           <span className="flex items-center gap-1">
             <Ruler className="w-3 h-3" />
-            {variant.baseUnitName} ({variant.baseUnitShortName})
+            Base: {variant.baseUnitName} ({variant.baseUnitShortName})
           </span>
+          {hasBulk && (
+            <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+              <Boxes className="w-3 h-3" />
+              1 {variant.purchaseUnitName} = {variant.purchaseUnitFactor}{" "}
+              {variant.baseUnitName}
+              {variant.purchaseUnitFactor !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
       </div>
 

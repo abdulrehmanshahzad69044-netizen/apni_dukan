@@ -23,13 +23,15 @@ export type StockBatch = {
   variantName: string;
   productName: string;
   baseUnitShortName: string;
+  purchaseUnitShortName: string | null;
+  purchaseUnitFactor: number | null;
   purchaseId: number;
   purchaseNumber: string;
-  purchasePrice: number; // paisa
+  purchasePrice: number;
   suggestedRetailPrice: number | null;
   suggestedWholesalePrice: number | null;
-  quantityPurchased: number; // milli-units
-  remainingQuantity: number; // milli-units
+  quantityPurchased: number;
+  remainingQuantity: number;
   purchaseDate: number;
 };
 

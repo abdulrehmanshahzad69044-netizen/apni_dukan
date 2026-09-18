@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   FileEdit,
   PauseCircle,
+  Info,
 } from "lucide-react";
 import { Page } from "@/components/ui/Page";
 import { Button } from "@/components/ui/Button";
@@ -22,9 +23,17 @@ import {
   rupeesToPaisa,
   quantityToMilli,
   formatQuantity,
+  formatStockDisplay,
   toDateInputValue,
 } from "@/lib/format";
+import {
+  getUnitOptions,
+  enteredQtyToBase,
+  baseUnitPriceFromEntered,
+  defaultBillUnit,
+} from "@/lib/units";
 import { billApi } from "./api";
+import { PriceModeToggle, type PriceMode } from "./PriceModeToggle";
 import { useCustomers } from "../customers/hooks";
 import { useVariants } from "../variants/hooks";
 import { useStock } from "../inventory/hooks";
@@ -36,19 +45,39 @@ import type { StockItem } from "../../../electron/shared/types/inventory";
 type LineItem = {
   key: string;
   variantId: number;
-  unitId: number;
   productName: string;
   variantName: string;
+  baseUnitId: number;
+  baseUnitName: string;
   baseUnitShortName: string;
+  purchaseUnitId: number | null;
+  purchaseUnitName: string | null;
+  purchaseUnitShortName: string | null;
+  purchaseUnitFactor: number | null;
+  enteredUnitId: number;
   quantity: string;
   unitPrice: string;
+  priceMode: PriceMode;
+  latestRetailPricePaisa: number | null;
+  latestWholesalePricePaisa: number | null;
   availableStock: number;
+  /** Weighted average cost per base unit (paisa) */
+  avgCostPaisa: number;
 };
 
 type BillStatus = "finalized" | "draft" | "held";
 
 function makeKey() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function convertPriceByRatio(price: string, ratio: number): string {
+  const n = Number(price);
+  if (!Number.isFinite(n) || n === 0) return price;
+  const result = n * ratio;
+  return Number.isInteger(result)
+    ? String(result)
+    : result.toFixed(2).replace(/\.?0+$/, "");
 }
 
 export function BillEntryPage() {
@@ -98,7 +127,8 @@ export function BillEntryPage() {
     return rupeesToPaisa(n);
   }, [paidAmount]);
 
-  const remainingAfter = totalRecoverable - paidPaisa;
+  // Clamp remaining to 0 — no negative remaining
+  const remainingAfter = Math.max(0, totalRecoverable - paidPaisa);
 
   // ---------- Actions ----------
 
@@ -109,6 +139,7 @@ export function BillEntryPage() {
     }
     const stockItem = stockByVariant.get(v.id);
     const retail = stockItem?.latestRetailPrice ?? null;
+    const wholesale = stockItem?.latestWholesalePrice ?? null;
     const defaultPrice = retail !== null ? String(retail / 100) : "0";
 
     setLines((prev) => [
@@ -116,13 +147,23 @@ export function BillEntryPage() {
       {
         key: makeKey(),
         variantId: v.id,
-        unitId: v.baseUnitId,
         productName: v.productName,
         variantName: v.name,
+        baseUnitId: v.baseUnitId,
+        baseUnitName: v.baseUnitName,
         baseUnitShortName: v.baseUnitShortName,
+        purchaseUnitId: v.purchaseUnitId,
+        purchaseUnitName: v.purchaseUnitName,
+        purchaseUnitShortName: v.purchaseUnitShortName,
+        purchaseUnitFactor: v.purchaseUnitFactor,
+        enteredUnitId: defaultBillUnit(v),
         quantity: "1",
         unitPrice: defaultPrice,
+        priceMode: "retail",
+        latestRetailPricePaisa: retail,
+        latestWholesalePricePaisa: wholesale,
         availableStock: stockItem?.currentStock ?? 0,
+        avgCostPaisa: stockItem?.avgCost ?? 0,
       },
     ]);
     setVariantSearch("");
@@ -131,6 +172,59 @@ export function BillEntryPage() {
   function updateLine(key: string, patch: Partial<LineItem>) {
     setLines((prev) =>
       prev.map((l) => (l.key === key ? { ...l, ...patch } : l))
+    );
+  }
+
+  function changeUnit(key: string, newUnitId: number) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        if (l.enteredUnitId === newUnitId) return l;
+
+        const unitOptions = getUnitOptions(l);
+        const oldUnit =
+          unitOptions.find((u) => u.unitId === l.enteredUnitId) ??
+          unitOptions[0];
+        const newUnit =
+          unitOptions.find((u) => u.unitId === newUnitId) ?? unitOptions[0];
+
+        const ratio = newUnit.factor / oldUnit.factor;
+        return {
+          ...l,
+          enteredUnitId: newUnitId,
+          unitPrice: convertPriceByRatio(l.unitPrice, ratio),
+        };
+      })
+    );
+  }
+
+  function changePriceMode(key: string, newMode: PriceMode) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+
+        const unitOptions = getUnitOptions(l);
+        const enteredUnit =
+          unitOptions.find((u) => u.unitId === l.enteredUnitId) ??
+          unitOptions[0];
+        const factor = enteredUnit.factor;
+
+        const sourcePaisa =
+          newMode === "wholesale"
+            ? l.latestWholesalePricePaisa
+            : l.latestRetailPricePaisa;
+
+        if (sourcePaisa === null) {
+          return { ...l, priceMode: newMode };
+        }
+
+        const newPriceRupees = (sourcePaisa * factor) / 100;
+        return {
+          ...l,
+          priceMode: newMode,
+          unitPrice: String(newPriceRupees),
+        };
+      })
     );
   }
 
@@ -162,7 +256,6 @@ export function BillEntryPage() {
       }
     }
 
-    // Only enforce payment bound on finalized bills
     if (status === "finalized" && paidPaisa > totalRecoverable) {
       toast.error(
         "Paid amount cannot exceed total recoverable (previous + today)"
@@ -178,12 +271,27 @@ export function BillEntryPage() {
         paidAmount: status === "finalized" ? paidPaisa : 0,
         remarks: remarks.trim(),
         status,
-        lines: lines.map((l) => ({
-          variantId: l.variantId,
-          unitId: l.unitId,
-          quantity: quantityToMilli(Number(l.quantity)),
-          unitPrice: rupeesToPaisa(Number(l.unitPrice)),
-        })),
+        lines: lines.map((l) => {
+          const unitOptions = getUnitOptions(l);
+          const enteredUnit =
+            unitOptions.find((u) => u.unitId === l.enteredUnitId) ??
+            unitOptions[0];
+          const factor = enteredUnit.factor;
+
+          const qtyInBase = enteredQtyToBase(Number(l.quantity), factor);
+          const basePriceRupees = baseUnitPriceFromEntered(
+            Number(l.quantity),
+            Number(l.unitPrice),
+            factor
+          );
+
+          return {
+            variantId: l.variantId,
+            unitId: l.baseUnitId,
+            quantity: quantityToMilli(qtyInBase),
+            unitPrice: rupeesToPaisa(basePriceRupees),
+          };
+        }),
       });
 
       const label =
@@ -217,7 +325,6 @@ export function BillEntryPage() {
               variant="outline"
               onClick={() => saveWithStatus("held")}
               disabled={saving}
-              title="Save and pin for later"
             >
               <PauseCircle className="w-4 h-4" />
               Hold
@@ -226,7 +333,6 @@ export function BillEntryPage() {
               variant="outline"
               onClick={() => saveWithStatus("draft")}
               disabled={saving}
-              title="Save as work-in-progress"
             >
               <FileEdit className="w-4 h-4" />
               Draft
@@ -238,7 +344,7 @@ export function BillEntryPage() {
           </div>
         }
       >
-        {/* Header fields */}
+        {/* Header */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="space-y-1.5">
             <Label>Customer</Label>
@@ -304,7 +410,7 @@ export function BillEntryPage() {
           </div>
         )}
 
-        {/* Item search */}
+        {/* Search */}
         <div className="rounded-xl border bg-[rgb(var(--card))] p-4 mb-6">
           <Label className="mb-2 block">Add Item</Label>
           <div className="relative">
@@ -379,7 +485,7 @@ export function BillEntryPage() {
           )}
         </div>
 
-        {/* Line items */}
+        {/* Lines */}
         {lines.length === 0 ? (
           <EmptyState
             icon={<Plus className="w-6 h-6" />}
@@ -389,11 +495,32 @@ export function BillEntryPage() {
         ) : (
           <div className="space-y-3 mb-6">
             {lines.map((l) => {
-              const lineTotal = rupeesToPaisa(
+              const unitOptions = getUnitOptions(l);
+              const enteredUnit =
+                unitOptions.find((u) => u.unitId === l.enteredUnitId) ??
+                unitOptions[0];
+              const factor = enteredUnit.factor;
+
+              const enteredTotal = rupeesToPaisa(
                 (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0)
               );
-              const qtyMilli = quantityToMilli(Number(l.quantity) || 0);
+
+              const qtyInBase = (Number(l.quantity) || 0) * factor;
+              const qtyMilli = quantityToMilli(qtyInBase);
               const exceedsStock = qtyMilli > l.availableStock;
+
+              const basePrice = baseUnitPriceFromEntered(
+                Number(l.quantity) || 0,
+                Number(l.unitPrice) || 0,
+                factor
+              );
+              const showBasePreview = factor > 1;
+
+              const wholesaleAvailable = l.latestWholesalePricePaisa !== null;
+
+              // COST — always from avgCostPaisa (per base unit)
+              const costPerEnteredUnitPaisa = l.avgCostPaisa * factor;
+
               return (
                 <div
                   key={l.key}
@@ -403,10 +530,16 @@ export function BillEntryPage() {
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="min-w-0">
-                      <h4 className="font-medium truncate">{l.productName}</h4>
+                      <h4 className="font-medium truncate">
+                        {l.productName}
+                      </h4>
                       <p className="text-xs text-[rgb(var(--muted-fg))]">
-                        {l.variantName} · {l.baseUnitShortName} · Available:{" "}
-                        {formatQuantity(l.availableStock)}
+                        {l.variantName} · Available:{" "}
+                        {formatStockDisplay(l.availableStock, {
+                          baseUnitShortName: l.baseUnitShortName,
+                          purchaseUnitShortName: l.purchaseUnitShortName,
+                          purchaseUnitFactor: l.purchaseUnitFactor,
+                        })}
                       </p>
                     </div>
                     <Button
@@ -419,7 +552,7 @@ export function BillEntryPage() {
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Quantity</Label>
                       <Input
@@ -431,7 +564,9 @@ export function BillEntryPage() {
                           updateLine(l.key, { quantity: e.target.value })
                         }
                         className={
-                          exceedsStock ? "border-red-500 focus:ring-red-500" : ""
+                          exceedsStock
+                            ? "border-red-500 focus:ring-red-500"
+                            : ""
                         }
                       />
                       {exceedsStock && (
@@ -442,7 +577,33 @@ export function BillEntryPage() {
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs">Price (Rs.)</Label>
+                      <Label className="text-xs">Unit</Label>
+                      <select
+                        value={l.enteredUnitId}
+                        onChange={(e) =>
+                          changeUnit(l.key, Number(e.target.value))
+                        }
+                        className="w-full h-10 px-3 rounded-lg border bg-[rgb(var(--bg))] text-sm"
+                      >
+                        {unitOptions.map((u) => (
+                          <option key={u.unitId} value={u.unitId}>
+                            {u.unitShortName} ({u.unitName})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">
+                          Price per {enteredUnit.unitShortName} (Rs.)
+                        </Label>
+                        <PriceModeToggle
+                          mode={l.priceMode}
+                          onChange={(m) => changePriceMode(l.key, m)}
+                          wholesaleAvailable={wholesaleAvailable}
+                        />
+                      </div>
                       <Input
                         type="number"
                         min="0"
@@ -455,13 +616,42 @@ export function BillEntryPage() {
                     </div>
                   </div>
 
+                  {showBasePreview && Number(l.quantity) > 0 && (
+                    <div className="mt-2 text-xs text-[rgb(var(--muted-fg))]">
+                      = {formatQuantity(qtyMilli)} {l.baseUnitShortName} @{" "}
+                      {formatMoney(rupeesToPaisa(basePrice))} /{" "}
+                      {l.baseUnitShortName}
+                    </div>
+                  )}
+
+                  {/* COST — internal only, never printed */}
+                  <div className="mt-2 flex items-center gap-2 text-xs text-[rgb(var(--muted-fg))]">
+                    <Info className="w-3 h-3 shrink-0" />
+                    <span>
+                      Cost:{" "}
+                      <span className="font-mono">
+                        {formatMoney(l.avgCostPaisa)} / {l.baseUnitShortName}
+                      </span>
+                      {l.purchaseUnitShortName &&
+                        l.purchaseUnitFactor &&
+                        l.purchaseUnitFactor > 1 && (
+                          <span className="ml-1">
+                            (=
+                            {formatMoney(costPerEnteredUnitPaisa)} /{" "}
+                            {l.purchaseUnitShortName})
+                          </span>
+                        )}
+                    </span>
+                  </div>
+
                   <div className="mt-3 pt-3 border-t flex items-center justify-between text-sm">
                     <span className="text-[rgb(var(--muted-fg))]">
-                      {Number(l.quantity || 0).toFixed(2)} × Rs.{" "}
+                      {Number(l.quantity || 0).toFixed(2)}{" "}
+                      {enteredUnit.unitShortName} × Rs.{" "}
                       {Number(l.unitPrice || 0).toFixed(2)}
                     </span>
                     <span className="font-semibold">
-                      {formatMoney(lineTotal)}
+                      {formatMoney(enteredTotal)}
                     </span>
                   </div>
                 </div>

@@ -13,6 +13,8 @@ function toDto(row: {
   productId: number;
   name: string;
   baseUnitId: number;
+  purchaseUnitId: number | null;
+  purchaseUnitFactor: number | null;
   lowStockThreshold: number | null;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +22,8 @@ function toDto(row: {
   productName: string;
   baseUnitName: string;
   baseUnitShortName: string;
+  purchaseUnitName: string | null;
+  purchaseUnitShortName: string | null;
 }): Variant {
   return {
     id: row.id,
@@ -29,6 +33,10 @@ function toDto(row: {
     baseUnitId: row.baseUnitId,
     baseUnitName: row.baseUnitName,
     baseUnitShortName: row.baseUnitShortName,
+    purchaseUnitId: row.purchaseUnitId,
+    purchaseUnitName: row.purchaseUnitName,
+    purchaseUnitShortName: row.purchaseUnitShortName,
+    purchaseUnitFactor: row.purchaseUnitFactor,
     lowStockThreshold: row.lowStockThreshold,
     createdAt: Math.floor(row.createdAt.getTime() / 1000),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1000),
@@ -41,6 +49,8 @@ const variantSelect = {
   productId: variants.productId,
   name: variants.name,
   baseUnitId: variants.baseUnitId,
+  purchaseUnitId: variants.purchaseUnitId,
+  purchaseUnitFactor: variants.purchaseUnitFactor,
   lowStockThreshold: variants.lowStockThreshold,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
@@ -48,13 +58,16 @@ const variantSelect = {
   productName: sql<string>`p.name`,
   baseUnitName: sql<string>`u.name`,
   baseUnitShortName: sql<string>`u.short_name`,
+  purchaseUnitName: sql<string | null>`pu.name`,
+  purchaseUnitShortName: sql<string | null>`pu.short_name`,
 };
 
 function baseJoin(query: ReturnType<typeof getDb>["select"]) {
   return query
     .from(variants)
     .innerJoin(sql`products AS p`, sql`p.id = ${variants.productId}`)
-    .innerJoin(sql`units AS u`, sql`u.id = ${variants.baseUnitId}`);
+    .innerJoin(sql`units AS u`, sql`u.id = ${variants.baseUnitId}`)
+    .leftJoin(sql`units AS pu`, sql`pu.id = ${variants.purchaseUnitId}`);
 }
 
 export const variantService = {
@@ -97,6 +110,8 @@ export const variantService = {
         productId: input.productId,
         name: input.name,
         baseUnitId: input.baseUnitId,
+        purchaseUnitId: input.purchaseUnitId ?? null,
+        purchaseUnitFactor: input.purchaseUnitFactor ?? null,
         lowStockThreshold: input.lowStockThreshold ?? null,
       })
       .returning({ id: variants.id });
@@ -112,6 +127,10 @@ export const variantService = {
     if (input.name !== undefined) updateValues.name = input.name;
     if (input.baseUnitId !== undefined)
       updateValues.baseUnitId = input.baseUnitId;
+    if (input.purchaseUnitId !== undefined)
+      updateValues.purchaseUnitId = input.purchaseUnitId;
+    if (input.purchaseUnitFactor !== undefined)
+      updateValues.purchaseUnitFactor = input.purchaseUnitFactor;
     if (input.lowStockThreshold !== undefined)
       updateValues.lowStockThreshold = input.lowStockThreshold;
 

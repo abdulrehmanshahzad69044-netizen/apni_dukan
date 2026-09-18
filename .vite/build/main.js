@@ -2016,46 +2016,6 @@ class ForeignKey {
 function uniqueKeyName(table, columns) {
   return `${table[TableName]}_${columns.join("_")}_unique`;
 }
-function unique(name) {
-  return new UniqueOnConstraintBuilder(name);
-}
-class UniqueConstraintBuilder {
-  constructor(columns, name) {
-    this.name = name;
-    this.columns = columns;
-  }
-  static [entityKind] = "SQLiteUniqueConstraintBuilder";
-  /** @internal */
-  columns;
-  /** @internal */
-  build(table) {
-    return new UniqueConstraint(table, this.columns, this.name);
-  }
-}
-class UniqueOnConstraintBuilder {
-  static [entityKind] = "SQLiteUniqueOnConstraintBuilder";
-  /** @internal */
-  name;
-  constructor(name) {
-    this.name = name;
-  }
-  on(...columns) {
-    return new UniqueConstraintBuilder(columns, this.name);
-  }
-}
-class UniqueConstraint {
-  constructor(table, columns, name) {
-    this.table = table;
-    this.columns = columns;
-    this.name = name ?? uniqueKeyName(this.table, this.columns.map((column) => column.name));
-  }
-  static [entityKind] = "SQLiteUniqueConstraint";
-  columns;
-  name;
-  getName() {
-    return this.name;
-  }
-}
 class SQLiteColumnBuilder extends ColumnBuilder {
   static [entityKind] = "SQLiteColumnBuilder";
   foreignKeyConfigs = [];
@@ -2543,9 +2503,9 @@ const sqliteTable = (name, columns, extraConfig) => {
   return sqliteTableBase(name, columns, extraConfig);
 };
 class IndexBuilderOn {
-  constructor(name, unique2) {
+  constructor(name, unique) {
     this.name = name;
-    this.unique = unique2;
+    this.unique = unique;
   }
   static [entityKind] = "SQLiteIndexBuilderOn";
   on(...columns) {
@@ -2556,11 +2516,11 @@ class IndexBuilder {
   static [entityKind] = "SQLiteIndexBuilder";
   /** @internal */
   config;
-  constructor(name, columns, unique2) {
+  constructor(name, columns, unique) {
     this.config = {
       name,
       columns,
-      unique: unique2,
+      unique,
       where: void 0
     };
   }
@@ -5451,56 +5411,6 @@ const categories = sqliteTable("categories", {
 const categoriesRelations = relations(categories, ({ many }) => ({
   // Populated when products exist.
 }));
-const units = sqliteTable(
-  "units",
-  {
-    id: integer$1("id").primaryKey({ autoIncrement: true }),
-    name: text("name").notNull(),
-    shortName: text("short_name").notNull(),
-    ...timestamps,
-    ...softDelete
-  },
-  (t) => ({
-    nameIdx: index("units_name_idx").on(t.name)
-  })
-);
-const unitConversions = sqliteTable(
-  "unit_conversions",
-  {
-    id: integer$1("id").primaryKey({ autoIncrement: true }),
-    fromUnitId: integer$1("from_unit_id").notNull().references(() => units.id, { onDelete: "cascade" }),
-    toUnitId: integer$1("to_unit_id").notNull().references(() => units.id, { onDelete: "cascade" }),
-    factor: integer$1("factor").notNull(),
-    ...timestamps
-  },
-  (t) => ({
-    pairUnique: unique("unit_conversions_pair_unique").on(
-      t.fromUnitId,
-      t.toUnitId
-    ),
-    fromIdx: index("unit_conversions_from_idx").on(t.fromUnitId),
-    toIdx: index("unit_conversions_to_idx").on(t.toUnitId)
-  })
-);
-const unitsRelations = relations(units, ({ many }) => ({
-  conversionsFrom: many(unitConversions, { relationName: "fromUnit" }),
-  conversionsTo: many(unitConversions, { relationName: "toUnit" })
-}));
-const unitConversionsRelations = relations(
-  unitConversions,
-  ({ one }) => ({
-    fromUnit: one(units, {
-      fields: [unitConversions.fromUnitId],
-      references: [units.id],
-      relationName: "fromUnit"
-    }),
-    toUnit: one(units, {
-      fields: [unitConversions.toUnitId],
-      references: [units.id],
-      relationName: "toUnit"
-    })
-  })
-);
 const products = sqliteTable(
   "products",
   {
@@ -5534,11 +5444,21 @@ const variants = sqliteTable(
     id: integer$1("id").primaryKey({ autoIncrement: true }),
     productId: integer$1("product_id").notNull().references(() => products.id),
     name: text("name").notNull(),
+    /** The unit stock is tracked in. All quantities are stored in this unit. */
     baseUnitId: integer$1("base_unit_id").notNull().references(() => units.id),
     /**
-     * Low-stock alert threshold (milli-units).
-     * null = no threshold set (never alerts).
+     * Bulk/purchase unit — e.g. Carton, Crate, Dozen.
+     * Optional. If null, the variant can only be bought/sold in base unit.
      */
+    purchaseUnitId: integer$1("purchase_unit_id").references(() => units.id),
+    /**
+     * How many BASE units are in ONE purchase unit.
+     * Example: 24 means "1 Carton = 24 Packs"
+     *
+     * Must be a positive integer. Whole numbers only (no fractional cartons).
+     * Always paired with purchaseUnitId — both set or both null.
+     */
+    purchaseUnitFactor: integer$1("purchase_unit_factor"),
     lowStockThreshold: quantity("low_stock_threshold"),
     ...timestamps,
     ...softDelete
@@ -5546,18 +5466,42 @@ const variants = sqliteTable(
   (t) => ({
     productIdx: index("variants_product_idx").on(t.productId),
     unitIdx: index("variants_unit_idx").on(t.baseUnitId),
+    purchaseUnitIdx: index("variants_purchase_unit_idx").on(t.purchaseUnitId),
     nameIdx: index("variants_name_idx").on(t.name)
   })
 );
-const variantsRelations = relations(variants, ({ one, many }) => ({
+const variantsRelations = relations(variants, ({ one }) => ({
   product: one(products, {
     fields: [variants.productId],
     references: [products.id]
   }),
   baseUnit: one(units, {
     fields: [variants.baseUnitId],
-    references: [units.id]
+    references: [units.id],
+    relationName: "baseUnit"
+  }),
+  purchaseUnit: one(units, {
+    fields: [variants.purchaseUnitId],
+    references: [units.id],
+    relationName: "purchaseUnit"
   })
+}));
+const units = sqliteTable(
+  "units",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    shortName: text("short_name").notNull(),
+    ...timestamps,
+    ...softDelete
+  },
+  (t) => ({
+    nameIdx: index("units_name_idx").on(t.name)
+  })
+);
+const unitsRelations = relations(units, ({ many }) => ({
+  variantsAsBase: many(variants, { relationName: "baseUnit" }),
+  variantsAsPurchase: many(variants, { relationName: "purchaseUnit" })
 }));
 const stockLedger = sqliteTable(
   "stock_ledger",
@@ -5976,8 +5920,6 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   stockLedger,
   stockLedgerRelations,
   timestamps,
-  unitConversions,
-  unitConversionsRelations,
   units,
   unitsRelations,
   variants,
@@ -11039,104 +10981,6 @@ const unitService = {
     return row?.count ?? 0;
   }
 };
-const conversionSelect = {
-  id: unitConversions.id,
-  fromUnitId: unitConversions.fromUnitId,
-  toUnitId: unitConversions.toUnitId,
-  factor: unitConversions.factor,
-  createdAt: unitConversions.createdAt,
-  updatedAt: unitConversions.updatedAt,
-  fromUnitName: sql`from_unit.name`,
-  fromUnitShortName: sql`from_unit.short_name`,
-  toUnitName: sql`to_unit.name`,
-  toUnitShortName: sql`to_unit.short_name`
-};
-function toConversionDto(row) {
-  return {
-    id: row.id,
-    fromUnitId: row.fromUnitId,
-    toUnitId: row.toUnitId,
-    factor: row.factor,
-    fromUnitName: row.fromUnitName,
-    fromUnitShortName: row.fromUnitShortName,
-    toUnitName: row.toUnitName,
-    toUnitShortName: row.toUnitShortName,
-    createdAt: Math.floor(row.createdAt.getTime() / 1e3),
-    updatedAt: Math.floor(row.updatedAt.getTime() / 1e3)
-  };
-}
-const unitConversionService = {
-  /**
-   * List all conversions, optionally filtered by a specific unit
-   * (returns both directions involving that unit).
-   */
-  async list(filter) {
-    const db = getDb();
-    const rows = await db.select(conversionSelect).from(unitConversions).innerJoin(
-      sql`units AS from_unit`,
-      sql`from_unit.id = ${unitConversions.fromUnitId}`
-    ).innerJoin(
-      sql`units AS to_unit`,
-      sql`to_unit.id = ${unitConversions.toUnitId}`
-    ).where(
-      filter?.unitId !== void 0 ? or(
-        eq(unitConversions.fromUnitId, filter.unitId),
-        eq(unitConversions.toUnitId, filter.unitId)
-      ) : void 0
-    ).orderBy(asc(unitConversions.fromUnitId), asc(unitConversions.toUnitId));
-    return rows.map(toConversionDto);
-  },
-  async create(input) {
-    const db = getDb();
-    const existing = await db.select({ id: unitConversions.id }).from(unitConversions).where(
-      or(
-        and(
-          eq(unitConversions.fromUnitId, input.fromUnitId),
-          eq(unitConversions.toUnitId, input.toUnitId)
-        ),
-        and(
-          eq(unitConversions.fromUnitId, input.toUnitId),
-          eq(unitConversions.toUnitId, input.fromUnitId)
-        )
-      )
-    ).limit(1);
-    if (existing.length > 0) {
-      throw new Error("A conversion between these units already exists");
-    }
-    const milliFactor = Math.round(input.factor * 1e3);
-    const [inserted] = await db.insert(unitConversions).values({
-      fromUnitId: input.fromUnitId,
-      toUnitId: input.toUnitId,
-      factor: milliFactor
-    }).returning({ id: unitConversions.id });
-    const [row] = await db.select(conversionSelect).from(unitConversions).innerJoin(
-      sql`units AS from_unit`,
-      sql`from_unit.id = ${unitConversions.fromUnitId}`
-    ).innerJoin(
-      sql`units AS to_unit`,
-      sql`to_unit.id = ${unitConversions.toUnitId}`
-    ).where(eq(unitConversions.id, inserted.id)).limit(1);
-    return toConversionDto(row);
-  },
-  async update(input) {
-    const db = getDb();
-    const milliFactor = Math.round(input.factor * 1e3);
-    await db.update(unitConversions).set({ factor: milliFactor, updatedAt: /* @__PURE__ */ new Date() }).where(eq(unitConversions.id, input.id));
-    const [row] = await db.select(conversionSelect).from(unitConversions).innerJoin(
-      sql`units AS from_unit`,
-      sql`from_unit.id = ${unitConversions.fromUnitId}`
-    ).innerJoin(
-      sql`units AS to_unit`,
-      sql`to_unit.id = ${unitConversions.toUnitId}`
-    ).where(eq(unitConversions.id, input.id)).limit(1);
-    if (!row) throw new Error(`Conversion ${input.id} not found`);
-    return toConversionDto(row);
-  },
-  async delete(id) {
-    const db = getDb();
-    await db.delete(unitConversions).where(eq(unitConversions.id, id));
-  }
-};
 const createUnitSchema = object({
   name: string().trim().min(1, "Name is required").max(40),
   shortName: string().trim().min(1, "Short name is required").max(10)
@@ -11149,18 +10993,6 @@ const unitListQuerySchema = object({
   includeDeleted: boolean().optional().default(false),
   limit: number().int().positive().max(500).optional().default(100),
   offset: number().int().nonnegative().optional().default(0)
-});
-const createUnitConversionSchema = object({
-  fromUnitId: number().int().positive(),
-  toUnitId: number().int().positive(),
-  factor: number().positive("Factor must be positive").max(1e9, "Factor too large")
-}).refine((v) => v.fromUnitId !== v.toUnitId, {
-  message: "From and To units must be different",
-  path: ["toUnitId"]
-});
-const updateUnitConversionSchema = object({
-  id: number().int().positive(),
-  factor: number().positive("Factor must be positive").max(1e9, "Factor too large")
 });
 function registerUnitIpc() {
   require$$3$1.ipcMain.handle("unit:list", async (_e, rawQuery) => {
@@ -11188,24 +11020,6 @@ function registerUnitIpc() {
   });
   require$$3$1.ipcMain.handle("unit:restore", async (_e, id) => {
     await unitService.restore(id);
-    return { ok: true };
-  });
-  require$$3$1.ipcMain.handle(
-    "unitConversion:list",
-    async (_e, filter) => {
-      return unitConversionService.list(filter);
-    }
-  );
-  require$$3$1.ipcMain.handle("unitConversion:create", async (_e, rawInput) => {
-    const input = createUnitConversionSchema.parse(rawInput);
-    return unitConversionService.create(input);
-  });
-  require$$3$1.ipcMain.handle("unitConversion:update", async (_e, rawInput) => {
-    const input = updateUnitConversionSchema.parse(rawInput);
-    return unitConversionService.update(input);
-  });
-  require$$3$1.ipcMain.handle("unitConversion:delete", async (_e, id) => {
-    await unitConversionService.delete(id);
     return { ok: true };
   });
 }
@@ -11360,6 +11174,10 @@ function toDto$4(row) {
     baseUnitId: row.baseUnitId,
     baseUnitName: row.baseUnitName,
     baseUnitShortName: row.baseUnitShortName,
+    purchaseUnitId: row.purchaseUnitId,
+    purchaseUnitName: row.purchaseUnitName,
+    purchaseUnitShortName: row.purchaseUnitShortName,
+    purchaseUnitFactor: row.purchaseUnitFactor,
     lowStockThreshold: row.lowStockThreshold,
     createdAt: Math.floor(row.createdAt.getTime() / 1e3),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
@@ -11371,16 +11189,20 @@ const variantSelect = {
   productId: variants.productId,
   name: variants.name,
   baseUnitId: variants.baseUnitId,
+  purchaseUnitId: variants.purchaseUnitId,
+  purchaseUnitFactor: variants.purchaseUnitFactor,
   lowStockThreshold: variants.lowStockThreshold,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
   deletedAt: variants.deletedAt,
   productName: sql`p.name`,
   baseUnitName: sql`u.name`,
-  baseUnitShortName: sql`u.short_name`
+  baseUnitShortName: sql`u.short_name`,
+  purchaseUnitName: sql`pu.name`,
+  purchaseUnitShortName: sql`pu.short_name`
 };
 function baseJoin(query) {
-  return query.from(variants).innerJoin(sql`products AS p`, sql`p.id = ${variants.productId}`).innerJoin(sql`units AS u`, sql`u.id = ${variants.baseUnitId}`);
+  return query.from(variants).innerJoin(sql`products AS p`, sql`p.id = ${variants.productId}`).innerJoin(sql`units AS u`, sql`u.id = ${variants.baseUnitId}`).leftJoin(sql`units AS pu`, sql`pu.id = ${variants.purchaseUnitId}`);
 }
 const variantService = {
   async list(query) {
@@ -11410,6 +11232,8 @@ const variantService = {
       productId: input.productId,
       name: input.name,
       baseUnitId: input.baseUnitId,
+      purchaseUnitId: input.purchaseUnitId ?? null,
+      purchaseUnitFactor: input.purchaseUnitFactor ?? null,
       lowStockThreshold: input.lowStockThreshold ?? null
     }).returning({ id: variants.id });
     const created = await this.getById(inserted.id);
@@ -11422,6 +11246,10 @@ const variantService = {
     if (input.name !== void 0) updateValues.name = input.name;
     if (input.baseUnitId !== void 0)
       updateValues.baseUnitId = input.baseUnitId;
+    if (input.purchaseUnitId !== void 0)
+      updateValues.purchaseUnitId = input.purchaseUnitId;
+    if (input.purchaseUnitFactor !== void 0)
+      updateValues.purchaseUnitFactor = input.purchaseUnitFactor;
     if (input.lowStockThreshold !== void 0)
       updateValues.lowStockThreshold = input.lowStockThreshold;
     await db.update(variants).set(updateValues).where(eq(variants.id, input.id));
@@ -11453,18 +11281,34 @@ const variantService = {
     return row?.count ?? 0;
   }
 };
+const validatePurchaseUnit = (data) => {
+  const hasId = data.purchaseUnitId !== void 0 && data.purchaseUnitId !== null && data.purchaseUnitId > 0;
+  const hasFactor = data.purchaseUnitFactor !== void 0 && data.purchaseUnitFactor !== null && data.purchaseUnitFactor > 0;
+  if (!hasId && !hasFactor) return true;
+  if (hasId && hasFactor) return true;
+  return false;
+};
 const createVariantSchema = object({
   productId: number().int().positive(),
-  name: string().trim().min(1, "Name is required").max(80, "Name is too long"),
+  name: string().trim().min(1, "Name is required").max(80),
   baseUnitId: number().int().positive(),
-  /** milli-units; null / undefined = no threshold */
+  purchaseUnitId: number().int().positive().nullable().optional(),
+  purchaseUnitFactor: number().int().positive("Factor must be a positive whole number").max(1e5).nullable().optional(),
   lowStockThreshold: number().int().nonnegative().nullable().optional()
+}).refine(validatePurchaseUnit, {
+  message: "Both purchase unit and conversion factor are required, or leave both empty",
+  path: ["purchaseUnitFactor"]
 });
 const updateVariantSchema = object({
   id: number().int().positive(),
   name: string().trim().min(1).max(80).optional(),
   baseUnitId: number().int().positive().optional(),
+  purchaseUnitId: number().int().positive().nullable().optional(),
+  purchaseUnitFactor: number().int().positive("Factor must be a positive whole number").max(1e5).nullable().optional(),
   lowStockThreshold: number().int().nonnegative().nullable().optional()
+}).refine(validatePurchaseUnit, {
+  message: "Both purchase unit and conversion factor are required, or leave both empty",
+  path: ["purchaseUnitFactor"]
 });
 const variantListQuerySchema = object({
   search: string().trim().optional(),
@@ -11634,8 +11478,10 @@ const purchaseService = {
       variantName: sql`v.name`,
       productName: sql`p.name`,
       baseUnitShortName: sql`u.short_name`,
+      purchaseUnitShortName: sql`pu.short_name`,
+      purchaseUnitFactor: sql`v.purchase_unit_factor`,
       purchaseNumber: sql`pur.purchase_number`
-    }).from(stockBatches).innerJoin(sql`variants AS v`, sql`v.id = ${stockBatches.variantId}`).innerJoin(sql`products AS p`, sql`p.id = v.product_id`).innerJoin(sql`units AS u`, sql`u.id = v.base_unit_id`).innerJoin(
+    }).from(stockBatches).innerJoin(sql`variants AS v`, sql`v.id = ${stockBatches.variantId}`).innerJoin(sql`products AS p`, sql`p.id = v.product_id`).innerJoin(sql`units AS u`, sql`u.id = v.base_unit_id`).leftJoin(sql`units AS pu`, sql`pu.id = v.purchase_unit_id`).innerJoin(
       sql`purchases AS pur`,
       sql`pur.id = ${stockBatches.purchaseId}`
     ).where(eq(stockBatches.purchaseId, purchaseId)).orderBy(asc(stockBatches.id));
@@ -11645,6 +11491,8 @@ const purchaseService = {
       variantName: row.variantName,
       productName: row.productName,
       baseUnitShortName: row.baseUnitShortName,
+      purchaseUnitShortName: row.purchaseUnitShortName,
+      purchaseUnitFactor: row.purchaseUnitFactor,
       purchaseId: row.purchaseId,
       purchaseNumber: row.purchaseNumber,
       purchasePrice: row.purchasePrice,
@@ -11743,22 +11591,27 @@ const inventoryService = {
     const rows = db.$client.prepare(
       `
         SELECT
-          b.variant_id                             AS variantId,
-          v.product_id                             AS productId,
-          p.name                                   AS productName,
-          v.name                                   AS variantName,
-          v.base_unit_id                           AS baseUnitId,
-          u.name                                   AS baseUnitName,
-          u.short_name                             AS baseUnitShortName,
-          v.low_stock_threshold                    AS lowStockThreshold,
-          SUM(b.remaining_quantity)                AS currentStock,
+          b.variant_id                              AS variantId,
+          v.product_id                              AS productId,
+          p.name                                    AS productName,
+          v.name                                    AS variantName,
+          v.base_unit_id                            AS baseUnitId,
+          u.name                                    AS baseUnitName,
+          u.short_name                              AS baseUnitShortName,
+          v.purchase_unit_id                        AS purchaseUnitId,
+          v.purchase_unit_factor                    AS purchaseUnitFactor,
+          pu.name                                   AS purchaseUnitName,
+          pu.short_name                             AS purchaseUnitShortName,
+          v.low_stock_threshold                     AS lowStockThreshold,
+          SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
-          COUNT(*)                                 AS activeBatchCount,
-          MAX(b.purchase_date)                     AS lastPurchaseDate
+          COUNT(*)                                  AS activeBatchCount,
+          MAX(b.purchase_date)                      AS lastPurchaseDate
         FROM stock_batches b
         INNER JOIN variants  v ON v.id = b.variant_id
         INNER JOIN products  p ON p.id = v.product_id
         INNER JOIN units     u ON u.id = v.base_unit_id
+        LEFT  JOIN units     pu ON pu.id = v.purchase_unit_id
         WHERE b.remaining_quantity > 0
           AND v.deleted_at IS NULL
           ${query.search ? "AND (p.name LIKE @search OR v.name LIKE @search)" : ""}
@@ -11804,6 +11657,10 @@ const inventoryService = {
         baseUnitId: r.baseUnitId,
         baseUnitName: r.baseUnitName,
         baseUnitShortName: r.baseUnitShortName,
+        purchaseUnitId: r.purchaseUnitId,
+        purchaseUnitName: r.purchaseUnitName,
+        purchaseUnitShortName: r.purchaseUnitShortName,
+        purchaseUnitFactor: r.purchaseUnitFactor,
         currentStock,
         avgCost,
         stockValue: stockValuePaisa,
@@ -11885,10 +11742,6 @@ const inventoryService = {
       outOfStockCount: outRow?.outCount ?? 0
     };
   },
-  /**
-   * All purchase batches for a variant, oldest first.
-   * Used by the price-history modal.
-   */
   async priceHistory(variantId) {
     const db = getDb();
     const rows = db.$client.prepare(
@@ -12451,8 +12304,10 @@ const billService = {
       productName: sql`p.name`,
       variantName: sql`v.name`,
       baseUnitShortName: sql`u.short_name`,
+      purchaseUnitShortName: sql`pu.short_name`,
+      purchaseUnitFactor: sql`v.purchase_unit_factor`,
       unitName: sql`unit.name`
-    }).from(billItems).innerJoin(sql`variants v`, sql`v.id = ${billItems.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).innerJoin(sql`units unit`, sql`unit.id = ${billItems.unitId}`).where(eq(billItems.billId, id)).orderBy(asc(billItems.id));
+    }).from(billItems).innerJoin(sql`variants v`, sql`v.id = ${billItems.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).leftJoin(sql`units pu`, sql`pu.id = v.purchase_unit_id`).innerJoin(sql`units unit`, sql`unit.id = ${billItems.unitId}`).where(eq(billItems.billId, id)).orderBy(asc(billItems.id));
     const fifoRows = await db.select({
       id: billItemFifo.id,
       billItemId: billItemFifo.billItemId,
@@ -12484,6 +12339,8 @@ const billService = {
       productName: i.productName,
       variantName: i.variantName,
       baseUnitShortName: i.baseUnitShortName,
+      purchaseUnitShortName: i.purchaseUnitShortName,
+      purchaseUnitFactor: i.purchaseUnitFactor,
       unitId: i.unitId,
       unitName: i.unitName,
       quantity: i.quantity,
@@ -12555,6 +12412,51 @@ const billService = {
     if (query.toDate) conditions.push(lte(bills.billDate, query.toDate));
     const [row] = await db.select({ count: sql`count(*)` }).from(bills).where(conditions.length > 0 ? and(...conditions) : void 0);
     return row?.count ?? 0;
+  },
+  /**
+  * Preview the FIFO cost for a given variant + base-unit quantity.
+  * Does NOT consume stock. Pure read-only.
+  */
+  async previewFifoCost(input) {
+    const db = getDb();
+    const batches = await db.select().from(stockBatches).where(
+      and(
+        eq(stockBatches.variantId, input.variantId),
+        sql`${stockBatches.remainingQuantity} > 0`
+      )
+    ).orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id));
+    const availableQuantity = batches.reduce(
+      (sum, b) => sum + b.remainingQuantity,
+      0
+    );
+    const insufficient = availableQuantity < input.quantity;
+    let remaining = input.quantity;
+    let totalCost = 0;
+    const consumed = [];
+    for (const batch of batches) {
+      if (remaining <= 0) break;
+      const consume = Math.min(remaining, batch.remainingQuantity);
+      remaining -= consume;
+      const costContribution = Math.round(
+        consume * batch.purchasePrice / 1e3
+      );
+      totalCost += costContribution;
+      consumed.push({
+        batchId: batch.id,
+        purchaseDate: Math.floor(batch.purchaseDate.getTime() / 1e3),
+        quantityConsumed: consume,
+        unitCost: batch.purchasePrice
+      });
+    }
+    const avgCostPerBaseUnit = input.quantity > 0 ? Math.round(totalCost / (input.quantity / 1e3)) : 0;
+    return {
+      quantity: input.quantity,
+      avgCostPerBaseUnit,
+      totalCost,
+      batches: consumed,
+      insufficient,
+      availableQuantity
+    };
   }
 };
 const optionalTrimmedString$3 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
@@ -12568,9 +12470,7 @@ const billLineSchema = object({
   variantId: number().int().positive(),
   unitId: number().int().positive(),
   quantity: number().int().positive("Quantity must be positive"),
-  // milli-units
   unitPrice: number().int().nonnegative("Price cannot be negative")
-  // paisa
 });
 const createBillSchema = object({
   customerId: number().int().positive().nullable().optional(),
@@ -12588,6 +12488,11 @@ const billListQuerySchema = object({
   toDate: date().optional(),
   limit: number().int().positive().max(500).optional().default(100),
   offset: number().int().nonnegative().optional().default(0)
+});
+const fifoCostPreviewSchema = object({
+  variantId: number().int().positive(),
+  quantity: number().int().positive()
+  // milli-units, base unit
 });
 function registerBillIpc() {
   require$$3$1.ipcMain.handle("bill:list", async (_e, rawQuery) => {
@@ -12611,6 +12516,10 @@ function registerBillIpc() {
   require$$3$1.ipcMain.handle("bill:deleteDraft", async (_e, id) => {
     await billService.deleteDraft(id);
     return { ok: true };
+  });
+  require$$3$1.ipcMain.handle("bill:previewFifoCost", async (_e, rawInput) => {
+    const input = fifoCostPreviewSchema.parse(rawInput);
+    return billService.previewFifoCost(input);
   });
 }
 function toPaymentDto(row) {

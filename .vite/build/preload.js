@@ -41,12 +41,6 @@ const api = {
     delete: (id) => electron.ipcRenderer.invoke("unit:delete", id),
     restore: (id) => electron.ipcRenderer.invoke("unit:restore", id)
   },
-  unitConversion: {
-    list: (filter) => electron.ipcRenderer.invoke("unitConversion:list", filter),
-    create: (input) => electron.ipcRenderer.invoke("unitConversion:create", input),
-    update: (input) => electron.ipcRenderer.invoke("unitConversion:update", input),
-    delete: (id) => electron.ipcRenderer.invoke("unitConversion:delete", id)
-  },
   product: {
     list: (query) => electron.ipcRenderer.invoke("product:list", query ?? {}),
     count: (query) => electron.ipcRenderer.invoke("product:count", query ?? {}),
@@ -89,7 +83,8 @@ const api = {
     get: (id) => electron.ipcRenderer.invoke("bill:get", id),
     create: (input) => electron.ipcRenderer.invoke("bill:create", input),
     finalize: (id) => electron.ipcRenderer.invoke("bill:finalize", id),
-    deleteDraft: (id) => electron.ipcRenderer.invoke("bill:deleteDraft", id)
+    deleteDraft: (id) => electron.ipcRenderer.invoke("bill:deleteDraft", id),
+    previewFifoCost: (input) => electron.ipcRenderer.invoke("bill:previewFifoCost", input)
   },
   payment: {
     list: (query) => electron.ipcRenderer.invoke("payment:list", query ?? {}),

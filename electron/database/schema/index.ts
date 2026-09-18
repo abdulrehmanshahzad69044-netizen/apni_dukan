@@ -23,7 +23,7 @@ export * from "./bills";
 export * from "./bill-items";
 export * from "./bill-item-fifo";
 
-// Phase 4 — Payments (allocations reference both bills and udhaar)
+// Phase 4 — Payments
 export * from "./customer-udhaar";
 export * from "./payments";
 export * from "./payment-allocations";
