@@ -147,6 +147,12 @@ const api = {
   settings: {
     get: () => electron.ipcRenderer.invoke("settings:get"),
     update: (input) => electron.ipcRenderer.invoke("settings:update", input)
+  },
+  udhaar: {
+    list: (query) => electron.ipcRenderer.invoke("udhaar:list", query ?? {}),
+    get: (id) => electron.ipcRenderer.invoke("udhaar:get", id),
+    create: (input) => electron.ipcRenderer.invoke("udhaar:create", input),
+    delete: (id) => electron.ipcRenderer.invoke("udhaar:delete", id)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

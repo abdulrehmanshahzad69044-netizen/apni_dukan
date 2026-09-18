@@ -132,7 +132,7 @@ const api: AppApi = {
     html: (req) => ipcRenderer.invoke("print:html", req),
     pdf: (req) => ipcRenderer.invoke("print:pdf", req),
   },
-    backup: {
+  backup: {
     createLocal: (input) => ipcRenderer.invoke("backup:createLocal", input ?? {}),
     saveAsDialog: () => ipcRenderer.invoke("backup:saveAsDialog"),
     pickFile: () => ipcRenderer.invoke("backup:pickFile"),
@@ -153,6 +153,12 @@ const api: AppApi = {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     update: (input) => ipcRenderer.invoke("settings:update", input),
+  },
+  udhaar: {
+    list: (query) => ipcRenderer.invoke("udhaar:list", query ?? {}),
+    get: (id) => ipcRenderer.invoke("udhaar:get", id),
+    create: (input) => ipcRenderer.invoke("udhaar:create", input),
+    delete: (id) => ipcRenderer.invoke("udhaar:delete", id),
   },
 };
 

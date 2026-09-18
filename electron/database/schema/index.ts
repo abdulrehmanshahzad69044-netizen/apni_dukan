@@ -1,7 +1,7 @@
 // Shared helpers
 export * from "./_shared";
 
-// Settings (must be first — referenced by other modules)
+// Settings
 export * from "./settings";
 
 // Module schemas
@@ -23,7 +23,8 @@ export * from "./bills";
 export * from "./bill-items";
 export * from "./bill-item-fifo";
 
-// Phase 4 — Payments
+// Phase 4 — Payments (allocations reference both bills and udhaar)
+export * from "./customer-udhaar";
 export * from "./payments";
 export * from "./payment-allocations";
 

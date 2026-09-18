@@ -5743,18 +5743,48 @@ const billItemsRelations = relations(billItems, ({ one, many }) => ({
   }),
   fifoConsumptions: many(billItemFifo)
 }));
+const customerUdhaar = sqliteTable(
+  "customer_udhaar",
+  {
+    id: integer$1("id").primaryKey({ autoIncrement: true }),
+    customerId: integer$1("customer_id").notNull().references(() => customers.id),
+    amount: money("amount").notNull(),
+    paidAmount: money("paid_amount").notNull().default(0),
+    remainingAmount: money("remaining_amount").notNull(),
+    udhaarDate: integer$1("udhaar_date", { mode: "timestamp" }).notNull(),
+    reason: text("reason"),
+    ...timestamps
+  },
+  (t) => ({
+    customerIdx: index("customer_udhaar_customer_idx").on(t.customerId),
+    dateIdx: index("customer_udhaar_date_idx").on(t.udhaarDate)
+  })
+);
+const customerUdhaarRelations = relations(
+  customerUdhaar,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [customerUdhaar.customerId],
+      references: [customers.id]
+    })
+  })
+);
 const paymentAllocations = sqliteTable(
   "payment_allocations",
   {
     id: integer$1("id").primaryKey({ autoIncrement: true }),
     paymentId: integer$1("payment_id").notNull().references(() => payments.id, { onDelete: "cascade" }),
-    billId: integer$1("bill_id").notNull().references(() => bills.id),
+    /** Set when the allocation is against a bill */
+    billId: integer$1("bill_id").references(() => bills.id),
+    /** Set when the allocation is against a manual udhaar */
+    udhaarId: integer$1("udhaar_id").references(() => customerUdhaar.id),
     amount: money("amount").notNull(),
     ...timestamps
   },
   (t) => ({
     paymentIdx: index("payment_alloc_payment_idx").on(t.paymentId),
-    billIdx: index("payment_alloc_bill_idx").on(t.billId)
+    billIdx: index("payment_alloc_bill_idx").on(t.billId),
+    udhaarIdx: index("payment_alloc_udhaar_idx").on(t.udhaarId)
   })
 );
 const paymentAllocationsRelations = relations(
@@ -5767,6 +5797,10 @@ const paymentAllocationsRelations = relations(
     bill: one(bills, {
       fields: [paymentAllocations.billId],
       references: [bills.id]
+    }),
+    udhaar: one(customerUdhaar, {
+      fields: [paymentAllocations.udhaarId],
+      references: [customerUdhaar.id]
     })
   })
 );
@@ -5918,6 +5952,8 @@ const schema = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   companyPaymentAllocationsRelations,
   companyPayments,
   companyPaymentsRelations,
+  customerUdhaar,
+  customerUdhaarRelations,
   customers,
   customersRelations,
   expenses,
@@ -6038,7 +6074,7 @@ function registerAppIpc() {
     }
   );
 }
-function toDto$7(row) {
+function toDto$8(row) {
   return {
     id: row.id,
     name: row.name,
@@ -6067,12 +6103,12 @@ const customerService = {
       );
     }
     const rows = await db.select().from(customers).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(customers.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$7);
+    return rows.map(toDto$8);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
-    return rows[0] ? toDto$7(rows[0]) : null;
+    return rows[0] ? toDto$8(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -6081,7 +6117,7 @@ const customerService = {
       contactNumber: input.contactNumber ?? null,
       address: input.address ?? null
     }).returning();
-    return toDto$7(row);
+    return toDto$8(row);
   },
   async update(input) {
     const db = getDb();
@@ -6096,7 +6132,7 @@ const customerService = {
       updateValues.address = patch.address ?? null;
     const [row] = await db.update(customers).set(updateValues).where(eq(customers.id, id)).returning();
     if (!row) throw new Error(`Customer ${id} not found`);
-    return toDto$7(row);
+    return toDto$8(row);
   },
   /**
    * Soft delete. Never physically removes.
@@ -10703,7 +10739,7 @@ function registerCustomerIpc() {
     return { ok: true };
   });
 }
-function toDto$6(row) {
+function toDto$7(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10727,12 +10763,12 @@ const companyService = {
       );
     }
     const rows = await db.select().from(companies).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(companies.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$6);
+    return rows.map(toDto$7);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
-    return rows[0] ? toDto$6(rows[0]) : null;
+    return rows[0] ? toDto$7(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -10740,7 +10776,7 @@ const companyService = {
       name: input.name,
       contactNumber: input.contactNumber ?? null
     }).returning();
-    return toDto$6(row);
+    return toDto$7(row);
   },
   async update(input) {
     const db = getDb();
@@ -10751,7 +10787,7 @@ const companyService = {
       updateValues.contactNumber = patch.contactNumber ?? null;
     const [row] = await db.update(companies).set(updateValues).where(eq(companies.id, id)).returning();
     if (!row) throw new Error(`Company ${id} not found`);
-    return toDto$6(row);
+    return toDto$7(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -10817,7 +10853,7 @@ function registerCompanyIpc() {
     return { ok: true };
   });
 }
-function toDto$5(row) {
+function toDto$6(row) {
   return {
     id: row.id,
     name: row.name,
@@ -10846,18 +10882,18 @@ const categoryService = {
       conditions.push(like(categories.name, `%${query.search}%`));
     }
     const rows = await db.select().from(categories).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(categories.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$5);
+    return rows.map(toDto$6);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
-    return rows[0] ? toDto$5(rows[0]) : null;
+    return rows[0] ? toDto$6(rows[0]) : null;
   },
   async create(input) {
     await assertNameAvailable(input.name);
     const db = getDb();
     const [row] = await db.insert(categories).values({ name: input.name }).returning();
-    return toDto$5(row);
+    return toDto$6(row);
   },
   async update(input) {
     if (input.name !== void 0) {
@@ -10868,7 +10904,7 @@ const categoryService = {
     if (input.name !== void 0) updateValues.name = input.name;
     const [row] = await db.update(categories).set(updateValues).where(eq(categories.id, input.id)).returning();
     if (!row) throw new Error(`Category ${input.id} not found`);
-    return toDto$5(row);
+    return toDto$6(row);
   },
   async softDelete(id) {
     const db = getDb();
@@ -11173,7 +11209,7 @@ function registerUnitIpc() {
     return { ok: true };
   });
 }
-function toDto$4(row) {
+function toDto$5(row) {
   return {
     id: row.id,
     name: row.name,
@@ -11215,12 +11251,12 @@ const productService = {
       conditions.push(eq(products.companyId, query.companyId));
     }
     const rows = await baseJoin$1(db.select(productSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(products.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$4);
+    return rows.map(toDto$5);
   },
   async getById(id) {
     const db = getDb();
     const rows = await baseJoin$1(db.select(productSelect)).where(eq(products.id, id)).limit(1);
-    return rows[0] ? toDto$4(rows[0]) : null;
+    return rows[0] ? toDto$5(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -11315,7 +11351,7 @@ function registerProductIpc() {
     return { ok: true };
   });
 }
-function toDto$3(row) {
+function toDto$4(row) {
   return {
     id: row.id,
     productId: row.productId,
@@ -11361,12 +11397,12 @@ const variantService = {
       );
     }
     const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(variants.productId), asc(variants.name)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$3);
+    return rows.map(toDto$4);
   },
   async getById(id) {
     const db = getDb();
     const rows = await baseJoin(db.select(variantSelect)).where(eq(variants.id, id)).limit(1);
-    return rows[0] ? toDto$3(rows[0]) : null;
+    return rows[0] ? toDto$4(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -11644,7 +11680,7 @@ const purchaseService = {
     return updated;
   }
 };
-const optionalTrimmedString$3 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+const optionalTrimmedString$4 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
   if (v === null || v === void 0) return void 0;
   const t = v.trim();
   if (t === "") return void 0;
@@ -11662,7 +11698,7 @@ const createPurchaseSchema = object({
   companyId: number().int().positive(),
   purchaseDate: date().optional(),
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: optionalTrimmedString$3(500),
+  remarks: optionalTrimmedString$4(500),
   lines: array(purchaseLineSchema).min(1, "Add at least one line")
 });
 const purchaseListQuerySchema = object({
@@ -11912,7 +11948,7 @@ function registerInventoryIpc() {
     return inventoryService.priceHistory(variantId);
   });
 }
-function toDto$2(row) {
+function toDto$3(row) {
   return {
     id: row.id,
     variantId: row.variantId,
@@ -12050,7 +12086,7 @@ const adjustmentService = {
       variantName: sql`v.name`,
       baseUnitShortName: sql`u.short_name`
     }).from(stockAdjustments).innerJoin(sql`variants v`, sql`v.id = ${stockAdjustments.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).where(eq(stockAdjustments.id, id)).limit(1);
-    return rows[0] ? toDto$2(rows[0]) : null;
+    return rows[0] ? toDto$3(rows[0]) : null;
   },
   async list(query) {
     const db = getDb();
@@ -12089,7 +12125,7 @@ const adjustmentService = {
       desc(stockAdjustments.adjustmentDate),
       desc(stockAdjustments.id)
     ).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$2);
+    return rows.map(toDto$3);
   },
   /**
    * Count adjustments for a variant — useful for showing "N adjustments" on
@@ -12521,7 +12557,7 @@ const billService = {
     return row?.count ?? 0;
   }
 };
-const optionalTrimmedString$2 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+const optionalTrimmedString$3 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
   if (v === null || v === void 0) return void 0;
   const t = v.trim();
   if (t === "") return void 0;
@@ -12540,7 +12576,7 @@ const createBillSchema = object({
   customerId: number().int().positive().nullable().optional(),
   billDate: date().optional(),
   paidAmount: number().int().nonnegative().optional().default(0),
-  remarks: optionalTrimmedString$2(500),
+  remarks: optionalTrimmedString$3(500),
   status: _enum(["draft", "held", "finalized"]).optional().default("finalized"),
   lines: array(billLineSchema).min(1, "Add at least one item")
 });
@@ -12591,6 +12627,12 @@ function toPaymentDto(row) {
   };
 }
 const paymentService = {
+  /**
+   * Record a customer payment with FIFO allocation across BOTH unpaid bills
+   * and unpaid manual udhaar entries.
+   *
+   * Order: oldest by (date, type) first — bills and udhaars interleaved.
+   */
   async create(input) {
     const db = getDb();
     const paymentDate = input.paymentDate ?? /* @__PURE__ */ new Date();
@@ -12611,23 +12653,70 @@ const paymentService = {
           sql`${bills.remainingAmount} > 0`
         )
       ).orderBy(asc(bills.billDate), asc(bills.id)).all();
+      const unpaidUdhaar = tx.select().from(customerUdhaar).where(
+        and(
+          eq(customerUdhaar.customerId, input.customerId),
+          sql`${customerUdhaar.remainingAmount} > 0`
+        )
+      ).orderBy(asc(customerUdhaar.udhaarDate), asc(customerUdhaar.id)).all();
+      const queue = [];
+      for (const b of unpaidBills) {
+        queue.push({
+          when: b.billDate.getTime(),
+          item: { kind: "bill", row: b }
+        });
+      }
+      for (const u of unpaidUdhaar) {
+        queue.push({
+          when: u.udhaarDate.getTime(),
+          item: { kind: "udhaar", row: u }
+        });
+      }
+      queue.sort((a, b) => {
+        if (a.when !== b.when) return a.when - b.when;
+        if (a.item.kind !== b.item.kind) return a.item.kind === "bill" ? -1 : 1;
+        return a.item.row.id - b.item.row.id;
+      });
       let remainingToAllocate = input.amount;
       let totalAllocated = 0;
-      for (const bill of unpaidBills) {
+      for (const q of queue) {
         if (remainingToAllocate <= 0) break;
-        const allocate = Math.min(remainingToAllocate, bill.remainingAmount);
-        remainingToAllocate -= allocate;
-        totalAllocated += allocate;
-        tx.insert(paymentAllocations).values({
-          paymentId: payment.id,
-          billId: bill.id,
-          amount: allocate
-        }).run();
-        tx.update(bills).set({
-          paidAmount: bill.paidAmount + allocate,
-          remainingAmount: bill.remainingAmount - allocate,
-          updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq(bills.id, bill.id)).run();
+        if (q.item.kind === "bill") {
+          const bill = q.item.row;
+          const allocate = Math.min(remainingToAllocate, bill.remainingAmount);
+          remainingToAllocate -= allocate;
+          totalAllocated += allocate;
+          tx.insert(paymentAllocations).values({
+            paymentId: payment.id,
+            billId: bill.id,
+            udhaarId: null,
+            amount: allocate
+          }).run();
+          tx.update(bills).set({
+            paidAmount: bill.paidAmount + allocate,
+            remainingAmount: bill.remainingAmount - allocate,
+            updatedAt: /* @__PURE__ */ new Date()
+          }).where(eq(bills.id, bill.id)).run();
+        } else {
+          const udhaar = q.item.row;
+          const allocate = Math.min(
+            remainingToAllocate,
+            udhaar.remainingAmount
+          );
+          remainingToAllocate -= allocate;
+          totalAllocated += allocate;
+          tx.insert(paymentAllocations).values({
+            paymentId: payment.id,
+            billId: null,
+            udhaarId: udhaar.id,
+            amount: allocate
+          }).run();
+          tx.update(customerUdhaar).set({
+            paidAmount: udhaar.paidAmount + allocate,
+            remainingAmount: udhaar.remainingAmount - allocate,
+            updatedAt: /* @__PURE__ */ new Date()
+          }).where(eq(customerUdhaar.id, udhaar.id)).run();
+        }
       }
       if (totalAllocated > 0) {
         tx.update(customers).set({
@@ -12658,21 +12747,32 @@ const paymentService = {
     const allocations = await db.select({
       id: paymentAllocations.id,
       billId: paymentAllocations.billId,
+      udhaarId: paymentAllocations.udhaarId,
       billNumber: sql`b.bill_number`,
       billDate: sql`b.bill_date`,
+      udhaarDate: sql`u.udhaar_date`,
+      udhaarReason: sql`u.reason`,
       amount: paymentAllocations.amount
-    }).from(paymentAllocations).innerJoin(sql`bills b`, sql`b.id = ${paymentAllocations.billId}`).where(eq(paymentAllocations.paymentId, id)).orderBy(asc(sql`b.bill_date`));
+    }).from(paymentAllocations).leftJoin(sql`bills b`, sql`b.id = ${paymentAllocations.billId}`).leftJoin(
+      sql`customer_udhaar u`,
+      sql`u.id = ${paymentAllocations.udhaarId}`
+    ).where(eq(paymentAllocations.paymentId, id)).orderBy(asc(sql`COALESCE(b.bill_date, u.udhaar_date)`));
     return {
       ...toPaymentDto(header),
-      allocations: allocations.map((a) => ({
-        id: a.id,
-        billId: a.billId,
-        billNumber: a.billNumber,
-        billDate: Math.floor(
-          typeof a.billDate === "object" ? a.billDate.getTime() / 1e3 : Number(a.billDate)
-        ),
-        amount: a.amount
-      }))
+      allocations: allocations.map((a) => {
+        if (a.billId) {
+          return {
+            id: a.id,
+            billId: a.billId,
+            billNumber: a.billNumber ?? "",
+            billDate: Math.floor(
+              typeof a.billDate === "object" && a.billDate ? a.billDate.getTime() / 1e3 : Number(a.billDate ?? 0)
+            ),
+            amount: a.amount
+          };
+        }
+        return null;
+      }).filter((x) => x !== null)
     };
   },
   async list(query) {
@@ -12742,12 +12842,22 @@ const khaataService = {
           WHERE customer_id = ${customers.id}
             AND status = 'finalized'
             AND remaining_amount > 0
+        ) + (
+          SELECT COUNT(*) FROM customer_udhaar
+          WHERE customer_id = ${customers.id}
+            AND remaining_amount > 0
         )`,
       oldestBillDate: sql`(
-          SELECT MIN(bill_date) FROM bills
-          WHERE customer_id = ${customers.id}
-            AND status = 'finalized'
-            AND remaining_amount > 0
+          SELECT MIN(d) FROM (
+            SELECT bill_date AS d FROM bills
+              WHERE customer_id = ${customers.id}
+                AND status = 'finalized'
+                AND remaining_amount > 0
+            UNION ALL
+            SELECT udhaar_date AS d FROM customer_udhaar
+              WHERE customer_id = ${customers.id}
+                AND remaining_amount > 0
+          )
         )`
     }).from(customers).where(and(...conditions)).orderBy(desc(customers.cachedOutstanding)).limit(query.limit).offset(query.offset);
     return rows.map((r) => ({
@@ -12759,11 +12869,14 @@ const khaataService = {
       oldestBillDate: r.oldestBillDate
     }));
   },
+  /**
+   * Detail view: all unpaid bills AND unpaid udhaar entries, merged by date.
+   */
   async detail(customerId) {
     const db = getDb();
     const [cust] = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
     if (!cust) return null;
-    const rows = await db.select({
+    const billsRows = await db.select({
       billId: bills.id,
       billNumber: bills.billNumber,
       billDate: bills.billDate,
@@ -12777,25 +12890,71 @@ const khaataService = {
         sql`${bills.remainingAmount} > 0`
       )
     ).orderBy(asc(bills.billDate), asc(bills.id));
-    const billsDto = rows.map((r) => ({
-      billId: r.billId,
-      billNumber: r.billNumber,
-      billDate: Math.floor(r.billDate.getTime() / 1e3),
-      totalAmount: r.totalAmount,
-      paidAmount: r.paidAmount,
-      remainingAmount: r.remainingAmount
-    }));
-    const totalOutstanding = billsDto.reduce(
-      (s, b) => s + b.remainingAmount,
-      0
-    );
+    const udhaarRows = await db.select().from(customerUdhaar).where(
+      and(
+        eq(customerUdhaar.customerId, customerId),
+        sql`${customerUdhaar.remainingAmount} > 0`
+      )
+    ).orderBy(asc(customerUdhaar.udhaarDate), asc(customerUdhaar.id));
+    const entries = [];
+    for (const b of billsRows) {
+      entries.push({
+        kind: "bill",
+        when: b.billDate.getTime(),
+        bill: {
+          billId: b.billId,
+          billNumber: b.billNumber,
+          billDate: Math.floor(b.billDate.getTime() / 1e3),
+          totalAmount: b.totalAmount,
+          paidAmount: b.paidAmount,
+          remainingAmount: b.remainingAmount
+        }
+      });
+    }
+    for (const u of udhaarRows) {
+      entries.push({
+        kind: "udhaar",
+        udhaarId: u.id,
+        reason: u.reason,
+        amount: u.amount,
+        paidAmount: u.paidAmount,
+        remainingAmount: u.remainingAmount,
+        when: u.udhaarDate.getTime()
+      });
+    }
+    entries.sort((a, b) => a.when - b.when);
+    const billsDto = [];
+    const udhaarDto = [];
+    for (const e of entries) {
+      if (e.kind === "bill") {
+        billsDto.push(e.bill);
+      } else {
+        udhaarDto.push({
+          udhaarId: e.udhaarId,
+          reason: e.reason,
+          amount: e.amount,
+          paidAmount: e.paidAmount,
+          remainingAmount: e.remainingAmount,
+          when: e.when
+        });
+      }
+    }
+    const totalOutstanding = billsDto.reduce((s, b) => s + b.remainingAmount, 0) + udhaarDto.reduce((s, u) => s + u.remainingAmount, 0);
     return {
       customerId: cust.id,
       customerName: cust.name,
       contactNumber: cust.contactNumber,
       address: cust.address,
       totalOutstanding,
-      bills: billsDto
+      bills: billsDto,
+      udhaars: udhaarDto.map((u) => ({
+        udhaarId: u.udhaarId,
+        reason: u.reason,
+        amount: u.amount,
+        paidAmount: u.paidAmount,
+        remainingAmount: u.remainingAmount,
+        udhaarDate: Math.floor(u.when / 1e3)
+      }))
     };
   },
   async totalOutstanding() {
@@ -12806,21 +12965,22 @@ const khaataService = {
     return row?.total ?? 0;
   }
 };
+const optionalTrimmedString$2 = (max) => union([string(), _null(), _undefined()]).transform((v) => {
+  if (v === null || v === void 0) return void 0;
+  const t = v.trim();
+  if (t === "") return void 0;
+  if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+  return t;
+});
 const createPaymentSchema = object({
   customerId: number().int().positive(),
   amount: number().int().positive("Amount must be positive"),
-  // paisa
   paymentDate: date().optional(),
-  remarks: union([string(), _null(), _undefined()]).transform((v) => {
-    if (v === null || v === void 0) return void 0;
-    const t = v.trim();
-    return t === "" ? void 0 : t;
-  })
+  remarks: optionalTrimmedString$2(500)
 });
 const paymentListQuerySchema = object({
   customerId: number().int().positive().optional(),
   search: string().trim().optional(),
-  // customer name
   fromDate: date().optional(),
   toDate: date().optional(),
   limit: number().int().positive().max(500).optional().default(100),
@@ -12858,7 +13018,7 @@ function registerPaymentIpc() {
     return khaataService.totalOutstanding();
   });
 }
-function toDto$1(row) {
+function toDto$2(row) {
   return {
     id: row.id,
     name: row.name,
@@ -12883,12 +13043,12 @@ const expenseService = {
       conditions.push(lte(expenses.date, query.toDate));
     }
     const rows = await db.select().from(expenses).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(expenses.date), desc(expenses.id)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto$1);
+    return rows.map(toDto$2);
   },
   async getById(id) {
     const db = getDb();
     const rows = await db.select().from(expenses).where(eq(expenses.id, id)).limit(1);
-    return rows[0] ? toDto$1(rows[0]) : null;
+    return rows[0] ? toDto$2(rows[0]) : null;
   },
   async create(input) {
     const db = getDb();
@@ -12898,7 +13058,7 @@ const expenseService = {
       date: input.date ?? /* @__PURE__ */ new Date(),
       remarks: input.remarks ?? null
     }).returning();
-    return toDto$1(row);
+    return toDto$2(row);
   },
   async update(input) {
     const db = getDb();
@@ -12910,7 +13070,7 @@ const expenseService = {
       updateValues.remarks = input.remarks ?? null;
     const [row] = await db.update(expenses).set(updateValues).where(eq(expenses.id, input.id)).returning();
     if (!row) throw new Error(`Expense ${input.id} not found`);
-    return toDto$1(row);
+    return toDto$2(row);
   },
   async remove(id) {
     const db = getDb();
@@ -12935,7 +13095,7 @@ const expenseService = {
     return row?.total ?? 0;
   }
 };
-function toDto(row) {
+function toDto$1(row) {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -12978,7 +13138,7 @@ const companyPaymentService = {
       remarks: companyPayments.remarks,
       createdAt: companyPayments.createdAt
     }).from(companyPayments).innerJoin(sql`companies c`, sql`c.id = ${companyPayments.companyId}`).leftJoin(sql`purchases pur`, sql`pur.id = ${companyPayments.purchaseId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(companyPayments.date), desc(companyPayments.id)).limit(query.limit).offset(query.offset);
-    return rows.map(toDto);
+    return rows.map(toDto$1);
   },
   async getById(id) {
     const db = getDb();
@@ -12993,7 +13153,7 @@ const companyPaymentService = {
       remarks: companyPayments.remarks,
       createdAt: companyPayments.createdAt
     }).from(companyPayments).innerJoin(sql`companies c`, sql`c.id = ${companyPayments.companyId}`).leftJoin(sql`purchases pur`, sql`pur.id = ${companyPayments.purchaseId}`).where(eq(companyPayments.id, id)).limit(1);
-    return rows[0] ? toDto(rows[0]) : null;
+    return rows[0] ? toDto$1(rows[0]) : null;
   },
   /**
    * Get allocations for a payment (which purchases it was applied to).
@@ -14395,6 +14555,149 @@ function registerSettingsIpc() {
     return settingsService.update(input);
   });
 }
+function toDto(row) {
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    customerName: row.customerName,
+    amount: row.amount,
+    paidAmount: row.paidAmount,
+    remainingAmount: row.remainingAmount,
+    udhaarDate: Math.floor(row.udhaarDate.getTime() / 1e3),
+    reason: row.reason,
+    createdAt: Math.floor(row.createdAt.getTime() / 1e3)
+  };
+}
+const udhaarService = {
+  async list(query) {
+    const db = getDb();
+    const conditions = [];
+    if (query.customerId) {
+      conditions.push(eq(customerUdhaar.customerId, query.customerId));
+    }
+    if (query.search) {
+      conditions.push(like(sql`c.name`, `%${query.search}%`));
+    }
+    if (query.onlyUnpaid) {
+      conditions.push(sql`${customerUdhaar.remainingAmount} > 0`);
+    }
+    const rows = await db.select({
+      id: customerUdhaar.id,
+      customerId: customerUdhaar.customerId,
+      customerName: sql`c.name`,
+      amount: customerUdhaar.amount,
+      paidAmount: customerUdhaar.paidAmount,
+      remainingAmount: customerUdhaar.remainingAmount,
+      udhaarDate: customerUdhaar.udhaarDate,
+      reason: customerUdhaar.reason,
+      createdAt: customerUdhaar.createdAt
+    }).from(customerUdhaar).innerJoin(sql`customers c`, sql`c.id = ${customerUdhaar.customerId}`).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(customerUdhaar.udhaarDate), desc(customerUdhaar.id)).limit(query.limit).offset(query.offset);
+    return rows.map(toDto);
+  },
+  async getById(id) {
+    const db = getDb();
+    const rows = await db.select({
+      id: customerUdhaar.id,
+      customerId: customerUdhaar.customerId,
+      customerName: sql`c.name`,
+      amount: customerUdhaar.amount,
+      paidAmount: customerUdhaar.paidAmount,
+      remainingAmount: customerUdhaar.remainingAmount,
+      udhaarDate: customerUdhaar.udhaarDate,
+      reason: customerUdhaar.reason,
+      createdAt: customerUdhaar.createdAt
+    }).from(customerUdhaar).innerJoin(sql`customers c`, sql`c.id = ${customerUdhaar.customerId}`).where(eq(customerUdhaar.id, id)).limit(1);
+    return rows[0] ? toDto(rows[0]) : null;
+  },
+  /**
+   * Create a manual udhaar entry. Bumps customer's cachedOutstanding.
+   */
+  async create(input) {
+    const db = getDb();
+    const date2 = input.udhaarDate ?? /* @__PURE__ */ new Date();
+    const insertedId = db.transaction((tx) => {
+      const [cust] = tx.select().from(customers).where(eq(customers.id, input.customerId)).limit(1).all();
+      if (!cust) throw new Error(`Customer ${input.customerId} not found`);
+      const [udhaar] = tx.insert(customerUdhaar).values({
+        customerId: input.customerId,
+        amount: input.amount,
+        paidAmount: 0,
+        remainingAmount: input.amount,
+        udhaarDate: date2,
+        reason: input.reason ?? null
+      }).returning({ id: customerUdhaar.id }).all();
+      tx.update(customers).set({
+        cachedOutstanding: cust.cachedOutstanding + input.amount,
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq(customers.id, input.customerId)).run();
+      return udhaar.id;
+    });
+    const created = await this.getById(insertedId);
+    if (!created) throw new Error("Failed to load created udhaar");
+    return created;
+  },
+  /**
+   * Delete an unpaid udhaar entry (only if nothing has been paid toward it).
+   */
+  async remove(id) {
+    const db = getDb();
+    db.transaction((tx) => {
+      const [row] = tx.select().from(customerUdhaar).where(eq(customerUdhaar.id, id)).limit(1).all();
+      if (!row) throw new Error(`Udhaar ${id} not found`);
+      if (row.paidAmount > 0) {
+        throw new Error(
+          "Cannot delete — this udhaar has payments recorded against it."
+        );
+      }
+      const [cust] = tx.select().from(customers).where(eq(customers.id, row.customerId)).limit(1).all();
+      tx.delete(customerUdhaar).where(eq(customerUdhaar.id, id)).run();
+      if (cust) {
+        tx.update(customers).set({
+          cachedOutstanding: Math.max(
+            0,
+            cust.cachedOutstanding - row.remainingAmount
+          ),
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq(customers.id, row.customerId)).run();
+      }
+    });
+  }
+};
+const createUdhaarSchema = object({
+  customerId: number().int().positive(),
+  amount: number().int().positive("Amount must be positive"),
+  // paisa
+  udhaarDate: date().optional(),
+  reason: union([string(), _null(), _undefined()]).transform((v) => {
+    if (v === null || v === void 0) return void 0;
+    const t = v.trim();
+    return t === "" ? void 0 : t;
+  })
+});
+const udhaarListQuerySchema = object({
+  customerId: number().int().positive().optional(),
+  search: string().trim().optional(),
+  onlyUnpaid: boolean().optional().default(false),
+  limit: number().int().positive().max(500).optional().default(100),
+  offset: number().int().nonnegative().optional().default(0)
+});
+function registerUdhaarIpc() {
+  require$$3$1.ipcMain.handle("udhaar:list", async (_e, rawQuery) => {
+    const query = udhaarListQuerySchema.parse(rawQuery ?? {});
+    return udhaarService.list(query);
+  });
+  require$$3$1.ipcMain.handle("udhaar:get", async (_e, id) => {
+    return udhaarService.getById(id);
+  });
+  require$$3$1.ipcMain.handle("udhaar:create", async (_e, rawInput) => {
+    const input = createUdhaarSchema.parse(rawInput);
+    return udhaarService.create(input);
+  });
+  require$$3$1.ipcMain.handle("udhaar:delete", async (_e, id) => {
+    await udhaarService.remove(id);
+    return { ok: true };
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -14413,6 +14716,7 @@ function registerAllIpc() {
   registerPrintIpc();
   registerBackupIpc();
   registerSettingsIpc();
+  registerUdhaarIpc();
 }
 if (started) {
   require$$3$1.app.quit();

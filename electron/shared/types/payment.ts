@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// ---------- Payment DTO ----------
+// ---------- Payment ----------
 
 export type Payment = {
   id: number;
@@ -8,8 +8,8 @@ export type Payment = {
   customerName: string;
   billId: number | null;
   billNumber: string | null;
-  amount: number; // paisa
-  paymentDate: number; // unix seconds
+  amount: number;
+  paymentDate: number;
   remarks: string | null;
   createdAt: number;
 };
@@ -19,35 +19,34 @@ export type PaymentAllocation = {
   billId: number;
   billNumber: string;
   billDate: number;
-  amount: number; // paisa
+  amount: number;
 };
 
 export type PaymentDetail = Payment & {
   allocations: PaymentAllocation[];
 };
 
-// ---------- Input ----------
+const optionalTrimmedString = (max: number) =>
+  z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
+    if (v === null || v === undefined) return undefined;
+    const t = v.trim();
+    if (t === "") return undefined;
+    if (t.length > max) throw new Error(`Must be at most ${max} characters`);
+    return t;
+  });
 
 export const createPaymentSchema = z.object({
   customerId: z.number().int().positive(),
-  amount: z.number().int().positive("Amount must be positive"), // paisa
+  amount: z.number().int().positive("Amount must be positive"),
   paymentDate: z.coerce.date().optional(),
-  remarks: z
-  .union([z.string(), z.null(), z.undefined()])
-  .transform((v) => {
-    if (v === null || v === undefined) return undefined;
-    const t = v.trim();
-    return t === "" ? undefined : t;
-  }),
+  remarks: optionalTrimmedString(500),
 });
 
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 
-// ---------- Query ----------
-
 export const paymentListQuerySchema = z.object({
   customerId: z.number().int().positive().optional(),
-  search: z.string().trim().optional(), // customer name
+  search: z.string().trim().optional(),
   fromDate: z.coerce.date().optional(),
   toDate: z.coerce.date().optional(),
   limit: z.number().int().positive().max(500).optional().default(100),
@@ -56,15 +55,15 @@ export const paymentListQuerySchema = z.object({
 
 export type PaymentListQuery = z.infer<typeof paymentListQuerySchema>;
 
-// ---------- Khaata (outstanding bills per customer) ----------
+// ---------- Khaata ----------
 
 export type KhaataEntry = {
   customerId: number;
   customerName: string;
   contactNumber: string | null;
-  totalOutstanding: number; // paisa
+  totalOutstanding: number;
   billCount: number;
-  oldestBillDate: number | null; // unix seconds
+  oldestBillDate: number | null;
 };
 
 export type KhaataBill = {
@@ -76,6 +75,15 @@ export type KhaataBill = {
   remainingAmount: number;
 };
 
+export type KhaataUdhaar = {
+  udhaarId: number;
+  reason: string | null;
+  amount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  udhaarDate: number;
+};
+
 export type KhaataDetail = {
   customerId: number;
   customerName: string;
@@ -83,6 +91,7 @@ export type KhaataDetail = {
   address: string | null;
   totalOutstanding: number;
   bills: KhaataBill[];
+  udhaars: KhaataUdhaar[];
 };
 
 export const khaataListQuerySchema = z.object({

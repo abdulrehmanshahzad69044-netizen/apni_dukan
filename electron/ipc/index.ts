@@ -15,6 +15,7 @@ import { registerReportIpc } from "./report.ipc";
 import { registerPrintIpc } from "./print.ipc";
 import { registerBackupIpc } from "./backup.ipc";
 import { registerSettingsIpc } from "./settings.ipc";
+import { registerUdhaarIpc } from "./udhaar.ipc";
 
 export function registerAllIpc() {
   registerAppIpc();
@@ -34,4 +35,5 @@ export function registerAllIpc() {
   registerPrintIpc();
   registerBackupIpc();
   registerSettingsIpc();
+  registerUdhaarIpc();
 }

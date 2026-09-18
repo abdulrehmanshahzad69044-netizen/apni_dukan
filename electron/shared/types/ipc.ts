@@ -84,6 +84,11 @@ import type {
   LocalBackupInput,
   RestoreResult,
 } from "./backup";
+import type {
+  CreateUdhaarInput,
+  CustomerUdhaar,
+  UdhaarListQuery,
+} from "./udhaar";
 import type { Settings, UpdateSettingsInput } from "./settings";
 
 import type { FullReport, ReportQuery, SalesSummary } from "./report";
@@ -286,7 +291,7 @@ export type AppApi = {
       documentTitle?: string;
     }) => Promise<{ ok: true }>;
   };
-    backup: {
+  backup: {
     createLocal: (input?: LocalBackupInput) => Promise<BackupFile>;
     saveAsDialog: () => Promise<string | null>;
     pickFile: () => Promise<string | null>;
@@ -307,6 +312,12 @@ export type AppApi = {
   settings: {
     get: () => Promise<Settings>;
     update: (input: UpdateSettingsInput) => Promise<Settings>;
+  };
+  udhaar: {
+    list: (query?: Partial<UdhaarListQuery>) => Promise<CustomerUdhaar[]>;
+    get: (id: number) => Promise<CustomerUdhaar | null>;
+    create: (input: CreateUdhaarInput) => Promise<CustomerUdhaar>;
+    delete: (id: number) => Promise<{ ok: true }>;
   };
 };
 

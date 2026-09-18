@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, isNull, like, lte, or, sql } from "drizzle-orm
 import { getDb } from "../database/client";
 import {
   bills,
+  customerUdhaar,
   customers,
   paymentAllocations,
   payments,
@@ -16,8 +17,6 @@ import type {
   PaymentDetail,
   PaymentListQuery,
 } from "../shared/types/payment";
-
-// ---------- Helpers ----------
 
 function toPaymentDto(row: {
   id: number;
@@ -43,9 +42,13 @@ function toPaymentDto(row: {
   };
 }
 
-// ---------- Payment Service ----------
-
 export const paymentService = {
+  /**
+   * Record a customer payment with FIFO allocation across BOTH unpaid bills
+   * and unpaid manual udhaar entries.
+   *
+   * Order: oldest by (date, type) first — bills and udhaars interleaved.
+   */
   async create(input: CreatePaymentInput): Promise<PaymentDetail> {
     const db = getDb();
     const paymentDate = input.paymentDate ?? new Date();
@@ -72,6 +75,7 @@ export const paymentService = {
         .returning({ id: payments.id })
         .all();
 
+      // Load unpaid bills
       const unpaidBills = tx
         .select()
         .from(bills)
@@ -85,31 +89,100 @@ export const paymentService = {
         .orderBy(asc(bills.billDate), asc(bills.id))
         .all();
 
+      // Load unpaid udhaar
+      const unpaidUdhaar = tx
+        .select()
+        .from(customerUdhaar)
+        .where(
+          and(
+            eq(customerUdhaar.customerId, input.customerId),
+            sql`${customerUdhaar.remainingAmount} > 0`
+          )
+        )
+        .orderBy(asc(customerUdhaar.udhaarDate), asc(customerUdhaar.id))
+        .all();
+
+      // Merge into a single chronological queue (oldest first)
+      type Item =
+        | { kind: "bill"; row: typeof unpaidBills[number] }
+        | { kind: "udhaar"; row: typeof unpaidUdhaar[number] };
+
+      const queue: Array<{ when: number; item: Item }> = [];
+      for (const b of unpaidBills) {
+        queue.push({
+          when: b.billDate.getTime(),
+          item: { kind: "bill", row: b },
+        });
+      }
+      for (const u of unpaidUdhaar) {
+        queue.push({
+          when: u.udhaarDate.getTime(),
+          item: { kind: "udhaar", row: u },
+        });
+      }
+      queue.sort((a, b) => {
+        if (a.when !== b.when) return a.when - b.when;
+        // Tiebreaker: bills before udhaar, then by id
+        if (a.item.kind !== b.item.kind) return a.item.kind === "bill" ? -1 : 1;
+        return a.item.row.id - b.item.row.id;
+      });
+
       let remainingToAllocate = input.amount;
       let totalAllocated = 0;
 
-      for (const bill of unpaidBills) {
+      for (const q of queue) {
         if (remainingToAllocate <= 0) break;
-        const allocate = Math.min(remainingToAllocate, bill.remainingAmount);
-        remainingToAllocate -= allocate;
-        totalAllocated += allocate;
 
-        tx.insert(paymentAllocations)
-          .values({
-            paymentId: payment.id,
-            billId: bill.id,
-            amount: allocate,
-          })
-          .run();
+        if (q.item.kind === "bill") {
+          const bill = q.item.row;
+          const allocate = Math.min(remainingToAllocate, bill.remainingAmount);
+          remainingToAllocate -= allocate;
+          totalAllocated += allocate;
 
-        tx.update(bills)
-          .set({
-            paidAmount: bill.paidAmount + allocate,
-            remainingAmount: bill.remainingAmount - allocate,
-            updatedAt: new Date(),
-          })
-          .where(eq(bills.id, bill.id))
-          .run();
+          tx.insert(paymentAllocations)
+            .values({
+              paymentId: payment.id,
+              billId: bill.id,
+              udhaarId: null,
+              amount: allocate,
+            })
+            .run();
+
+          tx.update(bills)
+            .set({
+              paidAmount: bill.paidAmount + allocate,
+              remainingAmount: bill.remainingAmount - allocate,
+              updatedAt: new Date(),
+            })
+            .where(eq(bills.id, bill.id))
+            .run();
+        } else {
+          const udhaar = q.item.row;
+          const allocate = Math.min(
+            remainingToAllocate,
+            udhaar.remainingAmount
+          );
+          remainingToAllocate -= allocate;
+          totalAllocated += allocate;
+
+          tx.insert(paymentAllocations)
+            .values({
+              paymentId: payment.id,
+              billId: null,
+              udhaarId: udhaar.id,
+              amount: allocate,
+            })
+            .run();
+
+          tx.update(customerUdhaar)
+            .set({
+              paidAmount: udhaar.paidAmount + allocate,
+              remainingAmount: udhaar.remainingAmount - allocate,
+              updatedAt: new Date(),
+            })
+            .where(eq(customerUdhaar.id, udhaar.id))
+            .run();
+        }
       }
 
       if (totalAllocated > 0) {
@@ -157,28 +230,42 @@ export const paymentService = {
       .select({
         id: paymentAllocations.id,
         billId: paymentAllocations.billId,
-        billNumber: sql<string>`b.bill_number`,
-        billDate: sql<Date>`b.bill_date`,
+        udhaarId: paymentAllocations.udhaarId,
+        billNumber: sql<string | null>`b.bill_number`,
+        billDate: sql<Date | null>`b.bill_date`,
+        udhaarDate: sql<Date | null>`u.udhaar_date`,
+        udhaarReason: sql<string | null>`u.reason`,
         amount: paymentAllocations.amount,
       })
       .from(paymentAllocations)
-      .innerJoin(sql`bills b`, sql`b.id = ${paymentAllocations.billId}`)
+      .leftJoin(sql`bills b`, sql`b.id = ${paymentAllocations.billId}`)
+      .leftJoin(
+        sql`customer_udhaar u`,
+        sql`u.id = ${paymentAllocations.udhaarId}`
+      )
       .where(eq(paymentAllocations.paymentId, id))
-      .orderBy(asc(sql`b.bill_date`));
+      .orderBy(asc(sql`COALESCE(b.bill_date, u.udhaar_date)`));
 
     return {
       ...toPaymentDto(header),
-      allocations: allocations.map((a) => ({
-        id: a.id,
-        billId: a.billId,
-        billNumber: a.billNumber,
-        billDate: Math.floor(
-          typeof a.billDate === "object"
-            ? a.billDate.getTime() / 1000
-            : Number(a.billDate)
-        ),
-        amount: a.amount,
-      })),
+      allocations: allocations
+        .map((a) => {
+          if (a.billId) {
+            return {
+              id: a.id,
+              billId: a.billId,
+              billNumber: a.billNumber ?? "",
+              billDate: Math.floor(
+                typeof a.billDate === "object" && a.billDate
+                  ? a.billDate.getTime() / 1000
+                  : Number(a.billDate ?? 0)
+              ),
+              amount: a.amount,
+            };
+          }
+          return null;
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null),
     };
   },
 
@@ -242,13 +329,12 @@ export const paymentService = {
   },
 };
 
-// ---------- Khaata Service ----------
+// ---------- Khaata ----------
 
 export const khaataService = {
   async list(query: KhaataListQuery): Promise<KhaataEntry[]> {
     const db = getDb();
 
-    // ✅ Use typed Drizzle conditions instead of raw `c.xxx` references
     const conditions = [
       sql`${customers.cachedOutstanding} > 0`,
       isNull(customers.deletedAt),
@@ -275,12 +361,22 @@ export const khaataService = {
           WHERE customer_id = ${customers.id}
             AND status = 'finalized'
             AND remaining_amount > 0
+        ) + (
+          SELECT COUNT(*) FROM customer_udhaar
+          WHERE customer_id = ${customers.id}
+            AND remaining_amount > 0
         )`,
         oldestBillDate: sql<number | null>`(
-          SELECT MIN(bill_date) FROM bills
-          WHERE customer_id = ${customers.id}
-            AND status = 'finalized'
-            AND remaining_amount > 0
+          SELECT MIN(d) FROM (
+            SELECT bill_date AS d FROM bills
+              WHERE customer_id = ${customers.id}
+                AND status = 'finalized'
+                AND remaining_amount > 0
+            UNION ALL
+            SELECT udhaar_date AS d FROM customer_udhaar
+              WHERE customer_id = ${customers.id}
+                AND remaining_amount > 0
+          )
         )`,
       })
       .from(customers)
@@ -299,6 +395,9 @@ export const khaataService = {
     }));
   },
 
+  /**
+   * Detail view: all unpaid bills AND unpaid udhaar entries, merged by date.
+   */
   async detail(customerId: number): Promise<KhaataDetail | null> {
     const db = getDb();
 
@@ -310,7 +409,7 @@ export const khaataService = {
 
     if (!cust) return null;
 
-    const rows = await db
+    const billsRows = await db
       .select({
         billId: bills.id,
         billNumber: bills.billNumber,
@@ -329,20 +428,92 @@ export const khaataService = {
       )
       .orderBy(asc(bills.billDate), asc(bills.id));
 
-    const billsDto: KhaataBill[] = rows.map((r) => ({
-      billId: r.billId,
-      billNumber: r.billNumber,
-      billDate: Math.floor(r.billDate.getTime() / 1000),
-      totalAmount: r.totalAmount,
-      paidAmount: r.paidAmount,
-      remainingAmount: r.remainingAmount,
-    }));
+    const udhaarRows = await db
+      .select()
+      .from(customerUdhaar)
+      .where(
+        and(
+          eq(customerUdhaar.customerId, customerId),
+          sql`${customerUdhaar.remainingAmount} > 0`
+        )
+      )
+      .orderBy(asc(customerUdhaar.udhaarDate), asc(customerUdhaar.id));
 
-    const totalOutstanding = billsDto.reduce(
-      (s, b) => s + b.remainingAmount,
-      0
-    );
+    // Merge and sort by date
+    type Entry =
+      | { kind: "bill"; bill: KhaataBill; when: number }
+      | {
+          kind: "udhaar";
+          udhaarId: number;
+          reason: string | null;
+          amount: number;
+          paidAmount: number;
+          remainingAmount: number;
+          when: number;
+        };
 
+    const entries: Entry[] = [];
+
+    for (const b of billsRows) {
+      entries.push({
+        kind: "bill",
+        when: b.billDate.getTime(),
+        bill: {
+          billId: b.billId,
+          billNumber: b.billNumber,
+          billDate: Math.floor(b.billDate.getTime() / 1000),
+          totalAmount: b.totalAmount,
+          paidAmount: b.paidAmount,
+          remainingAmount: b.remainingAmount,
+        },
+      });
+    }
+
+    for (const u of udhaarRows) {
+      entries.push({
+        kind: "udhaar",
+        udhaarId: u.id,
+        reason: u.reason,
+        amount: u.amount,
+        paidAmount: u.paidAmount,
+        remainingAmount: u.remainingAmount,
+        when: u.udhaarDate.getTime(),
+      });
+    }
+
+    entries.sort((a, b) => a.when - b.when);
+
+    const billsDto: KhaataBill[] = [];
+    const udhaarDto: Array<{
+      udhaarId: number;
+      reason: string | null;
+      amount: number;
+      paidAmount: number;
+      remainingAmount: number;
+      when: number;
+    }> = [];
+
+    for (const e of entries) {
+      if (e.kind === "bill") {
+        billsDto.push(e.bill);
+      } else {
+        udhaarDto.push({
+          udhaarId: e.udhaarId,
+          reason: e.reason,
+          amount: e.amount,
+          paidAmount: e.paidAmount,
+          remainingAmount: e.remainingAmount,
+          when: e.when,
+        });
+      }
+    }
+
+    // Compute total (should match cachedOutstanding, but compute fresh)
+    const totalOutstanding =
+      billsDto.reduce((s, b) => s + b.remainingAmount, 0) +
+      udhaarDto.reduce((s, u) => s + u.remainingAmount, 0);
+
+    // Extend KhaataDetail with udhaar — see updated type below
     return {
       customerId: cust.id,
       customerName: cust.name,
@@ -350,6 +521,14 @@ export const khaataService = {
       address: cust.address,
       totalOutstanding,
       bills: billsDto,
+      udhaars: udhaarDto.map((u) => ({
+        udhaarId: u.udhaarId,
+        reason: u.reason,
+        amount: u.amount,
+        paidAmount: u.paidAmount,
+        remainingAmount: u.remainingAmount,
+        udhaarDate: Math.floor(u.when / 1000),
+      })),
     };
   },
 

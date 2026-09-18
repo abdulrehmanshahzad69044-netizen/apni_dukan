@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { customerApi } from "./api";
 import { toast } from "@/lib/toast";
+import { RecordUdhaarModal } from "../udhaar/RecordUdhaarModal";
 import type { Customer } from "../../../electron/shared/types/customer";
 
 type Props = {
@@ -15,11 +16,15 @@ type Props = {
 };
 
 export function CustomerFormModal({ open, onClose, onSaved, initial }: Props) {
+  const isEdit = !!initial;
+
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [address, setAddress] = useState("");
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [showUdhaarOption, setShowUdhaarOption] = useState(false);
+  const [createdCustomer, setCreatedCustomer] = useState<Customer | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -27,6 +32,8 @@ export function CustomerFormModal({ open, onClose, onSaved, initial }: Props) {
       setContact(initial?.contactNumber ?? "");
       setAddress(initial?.address ?? "");
       setNameError(null);
+      setShowUdhaarOption(false);
+      setCreatedCustomer(null);
     }
   }, [open, initial]);
 
@@ -46,21 +53,42 @@ export function CustomerFormModal({ open, onClose, onSaved, initial }: Props) {
           address: address.trim(),
         });
         toast.success("Customer updated");
+        onSaved();
+        onClose();
       } else {
-        await customerApi.create({
+        const created = await customerApi.create({
           name: trimmed,
           contactNumber: contact.trim(),
           address: address.trim(),
         });
         toast.success("Customer added");
+        onSaved();
+
+        // Offer to add a udhaar immediately
+        setCreatedCustomer(created);
+        setShowUdhaarOption(true);
       }
-      onSaved();
-      onClose();
     } catch (e) {
       toast.error((e as Error).message ?? "Failed to save");
     } finally {
       setSaving(false);
     }
+  }
+
+  // When the udhaar sub-modal is done, close everything
+  if (showUdhaarOption && createdCustomer) {
+    return (
+      <RecordUdhaarModal
+        open
+        onClose={() => {
+          setShowUdhaarOption(false);
+          setCreatedCustomer(null);
+          onClose();
+        }}
+        onSaved={onSaved}
+        presetCustomer={createdCustomer}
+      />
+    );
   }
 
   return (
@@ -122,6 +150,13 @@ export function CustomerFormModal({ open, onClose, onSaved, initial }: Props) {
             onChange={(e) => setAddress(e.target.value)}
           />
         </div>
+
+        {!isEdit && (
+          <p className="text-xs text-[rgb(var(--muted-fg))] border-t pt-3">
+            <strong>Note:</strong> After saving, you'll be able to record any
+            existing pending due (udhaar) for this customer.
+          </p>
+        )}
       </div>
     </Modal>
   );
