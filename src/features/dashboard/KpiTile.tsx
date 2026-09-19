@@ -29,10 +29,8 @@ export function KpiTile({
   return (
     <Comp
       onClick={onClick}
-      className={cn(
-        "rounded-xl border bg-[rgb(var(--card))] p-4 text-left",
-        onClick && "hover:shadow-sm hover:border-[rgb(var(--fg))]/30 transition-all"
-      )}
+      className="rounded-xl border bg-[rgb(var(--card))] p-4 transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-[1px] cursor-pointer hover:border-[rgb(var(--fg))]/15
+"
     >
       <div className="flex items-start justify-between gap-2 mb-1">
         <p className="text-xs text-[rgb(var(--muted-fg))]">{label}</p>

@@ -14,7 +14,7 @@ export function CustomerRow({ customer, onEdit, onDelete }: Props) {
   const hasOutstanding = outstanding > 0;
 
   return (
-    <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 hover:shadow-sm transition-shadow">
+    <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-[1px] hover:border-[rgb(var(--fg))]/15">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3">
           <h3 className="font-medium truncate">{customer.name}</h3>

@@ -10,7 +10,7 @@ type Props = {
 
 export function UnitRow({ unit, onEdit, onDelete }: Props) {
   return (
-    <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 hover:shadow-sm transition-shadow">
+    <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-[1px] hover:border-[rgb(var(--fg))]/15">
       <div className="w-10 h-10 rounded-lg bg-[rgb(var(--muted))] flex items-center justify-center shrink-0">
         <Ruler className="w-5 h-5 text-[rgb(var(--muted-fg))]" />
       </div>

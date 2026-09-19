@@ -41,7 +41,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"
     >
@@ -56,12 +56,13 @@ export function Modal({
         className={cn(
           "relative w-full rounded-2xl border shadow-2xl bg-[rgb(var(--card))]",
           "max-h-[90vh] flex flex-col",
+          "animate-scale-in",
           sizes[size]
         )}
       >
         <header className="flex items-start justify-between gap-4 p-5 border-b">
           <div>
-            <h2 className="text-lg font-semibold">{title}</h2>
+            <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
             {description && (
               <p className="text-sm text-[rgb(var(--muted-fg))] mt-0.5">
                 {description}
