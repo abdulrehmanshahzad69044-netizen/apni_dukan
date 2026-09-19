@@ -42,4 +42,11 @@ export function registerVariantIpc() {
     await variantService.restore(id);
     return { ok: true };
   });
+
+  ipcMain.handle(
+    "variant:setPinned",
+    async (_e, payload: { id: number; pinned: boolean }) => {
+      return variantService.setPinned(payload.id, payload.pinned);
+    }
+  );
 }

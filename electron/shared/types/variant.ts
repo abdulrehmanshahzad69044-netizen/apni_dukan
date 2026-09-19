@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+
 export type Variant = {
   id: number;
   productId: number;
@@ -16,6 +17,9 @@ export type Variant = {
   purchaseUnitFactor: number | null;
 
   lowStockThreshold: number | null;
+
+  /** Pinned items sort to the top */
+  pinned: boolean;
 
   createdAt: number;
   updatedAt: number;

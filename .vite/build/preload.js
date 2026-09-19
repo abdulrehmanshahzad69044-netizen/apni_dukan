@@ -57,7 +57,8 @@ const api = {
     create: (input) => electron.ipcRenderer.invoke("variant:create", input),
     update: (input) => electron.ipcRenderer.invoke("variant:update", input),
     delete: (id) => electron.ipcRenderer.invoke("variant:delete", id),
-    restore: (id) => electron.ipcRenderer.invoke("variant:restore", id)
+    restore: (id) => electron.ipcRenderer.invoke("variant:restore", id),
+    setPinned: (payload) => electron.ipcRenderer.invoke("variant:setPinned", payload)
   },
   purchase: {
     list: (query) => electron.ipcRenderer.invoke("purchase:list", query ?? {}),
@@ -148,6 +149,11 @@ const api = {
     get: (id) => electron.ipcRenderer.invoke("udhaar:get", id),
     create: (input) => electron.ipcRenderer.invoke("udhaar:create", input),
     delete: (id) => electron.ipcRenderer.invoke("udhaar:delete", id)
+  },
+  openingStock: {
+    list: () => electron.ipcRenderer.invoke("openingStock:list"),
+    create: (input) => electron.ipcRenderer.invoke("openingStock:create", input),
+    delete: (batchId) => electron.ipcRenderer.invoke("openingStock:delete", batchId)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

@@ -174,7 +174,7 @@ export type AppApi = {
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };
-  variant: {
+    variant: {
     list: (query?: Partial<VariantListQuery>) => Promise<Variant[]>;
     count: (
       query?: Pick<VariantListQuery, "search" | "includeDeleted" | "productId">
@@ -184,6 +184,10 @@ export type AppApi = {
     update: (input: UpdateVariantInput) => Promise<Variant>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
+    setPinned: (payload: {
+      id: number;
+      pinned: boolean;
+    }) => Promise<Variant>;
   };
   purchase: {
     list: (query?: Partial<PurchaseListQuery>) => Promise<Purchase[]>;
@@ -320,7 +324,7 @@ export type AppApi = {
     create: (input: CreateUdhaarInput) => Promise<CustomerUdhaar>;
     delete: (id: number) => Promise<{ ok: true }>;
   };
-    openingStock: {
+  openingStock: {
     list: () => Promise<OpeningStockEntry[]>;
     create: (input: CreateOpeningStockInput) => Promise<OpeningStockEntry[]>;
     delete: (batchId: number) => Promise<{ ok: true }>;

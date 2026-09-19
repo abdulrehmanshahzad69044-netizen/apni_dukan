@@ -25,6 +25,7 @@ export const inventoryService = {
           pu.name                                   AS purchaseUnitName,
           pu.short_name                             AS purchaseUnitShortName,
           v.low_stock_threshold                     AS lowStockThreshold,
+                    v.pinned                                  AS pinned,
           SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
           COUNT(*)                                  AS activeBatchCount,
@@ -53,6 +54,7 @@ export const inventoryService = {
       purchaseUnitShortName: string | null;
       purchaseUnitFactor: number | null;
       lowStockThreshold: number | null;
+            pinned: number | boolean;
       currentStock: number;
       valueMilliPaisa: number;
       activeBatchCount: number;
@@ -117,7 +119,8 @@ export const inventoryService = {
         purchaseUnitId: r.purchaseUnitId,
         purchaseUnitName: r.purchaseUnitName,
         purchaseUnitShortName: r.purchaseUnitShortName,
-        purchaseUnitFactor: r.purchaseUnitFactor,
+        purchaseUnitFactor: r.purchaseUnitFactor,      
+          pinned: Boolean(r.pinned),
         currentStock,
         avgCost,
         stockValue: stockValuePaisa,
@@ -143,8 +146,11 @@ export const inventoryService = {
       );
     }
 
-    const sort = query.sort ?? "name";
+        const sort = query.sort ?? "name";
     items.sort((a, b) => {
+      // Pinned first, always
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+
       switch (sort) {
         case "name":
           return (

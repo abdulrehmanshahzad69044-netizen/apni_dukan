@@ -51,7 +51,7 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("product:delete", id),
     restore: (id) => ipcRenderer.invoke("product:restore", id),
   },
-  variant: {
+    variant: {
     list: (query) => ipcRenderer.invoke("variant:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("variant:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("variant:get", id),
@@ -59,6 +59,8 @@ const api: AppApi = {
     update: (input) => ipcRenderer.invoke("variant:update", input),
     delete: (id) => ipcRenderer.invoke("variant:delete", id),
     restore: (id) => ipcRenderer.invoke("variant:restore", id),
+    setPinned: (payload) =>
+      ipcRenderer.invoke("variant:setPinned", payload),
   },
   purchase: {
     list: (query) => ipcRenderer.invoke("purchase:list", query ?? {}),
@@ -155,6 +157,11 @@ const api: AppApi = {
     get: (id) => ipcRenderer.invoke("udhaar:get", id),
     create: (input) => ipcRenderer.invoke("udhaar:create", input),
     delete: (id) => ipcRenderer.invoke("udhaar:delete", id),
+  },
+  openingStock: {
+    list: () => ipcRenderer.invoke("openingStock:list"),
+    create: (input) => ipcRenderer.invoke("openingStock:create", input),
+    delete: (batchId) => ipcRenderer.invoke("openingStock:delete", batchId),
   },
 };
 

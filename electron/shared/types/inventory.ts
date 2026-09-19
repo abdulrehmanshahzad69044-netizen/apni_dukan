@@ -14,6 +14,8 @@ export type StockItem = {
   purchaseUnitShortName: string | null;
   purchaseUnitFactor: number | null;
 
+    pinned: boolean;
+
   currentStock: number;
   avgCost: number;
   stockValue: number;

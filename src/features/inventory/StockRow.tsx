@@ -1,4 +1,4 @@
-import { Package, AlertTriangle, TrendingUp } from "lucide-react";
+import { Package, AlertTriangle, TrendingUp, Pin, PinOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatMoney, formatStockDisplay } from "@/lib/format";
 import type { StockItem } from "../../../electron/shared/types/inventory";
@@ -6,9 +6,14 @@ import type { StockItem } from "../../../electron/shared/types/inventory";
 type Props = {
   item: StockItem;
   onShowPriceHistory: () => void;
+  onTogglePin: () => void;
 };
 
-export function StockRow({ item, onShowPriceHistory }: Props) {
+export function StockRow({
+  item,
+  onShowPriceHistory,
+  onTogglePin,
+}: Props) {
   const hasStock = item.currentStock > 0;
   const isLow =
     item.lowStockThreshold !== null &&
@@ -21,7 +26,27 @@ export function StockRow({ item, onShowPriceHistory }: Props) {
   });
 
   return (
-    <div className="rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4">
+    <div
+      className={`rounded-xl border bg-[rgb(var(--card))] p-4 flex items-center gap-4 ${
+        item.pinned ? "border-amber-500/40" : ""
+      }`}
+    >
+      {/* Pin toggle */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onTogglePin}
+        title={item.pinned ? "Unpin" : "Pin to top"}
+        aria-label={item.pinned ? "Unpin" : "Pin"}
+        className="shrink-0"
+      >
+        {item.pinned ? (
+          <Pin className="w-4 h-4 text-amber-600 dark:text-amber-400 fill-current" />
+        ) : (
+          <PinOff className="w-4 h-4 text-[rgb(var(--muted-fg))]" />
+        )}
+      </Button>
+
       <div className="w-10 h-10 rounded-lg bg-[rgb(var(--muted))] flex items-center justify-center shrink-0">
         <Package className="w-5 h-5 text-[rgb(var(--muted-fg))]" />
       </div>
@@ -32,6 +57,11 @@ export function StockRow({ item, onShowPriceHistory }: Props) {
           <span className="text-xs px-2 py-0.5 rounded bg-[rgb(var(--muted))] text-[rgb(var(--muted-fg))]">
             {item.variantName}
           </span>
+          {item.pinned && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+              Pinned
+            </span>
+          )}
           {!hasStock && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-500/15 text-red-700 dark:text-red-400">
               Out of stock

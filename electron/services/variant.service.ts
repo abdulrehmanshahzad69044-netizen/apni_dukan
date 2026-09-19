@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, like, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, like, or, sql } from "drizzle-orm";
 import { getDb } from "../database/client";
 import { variants } from "../database/schema";
 import type {
@@ -16,6 +16,7 @@ function toDto(row: {
   purchaseUnitId: number | null;
   purchaseUnitFactor: number | null;
   lowStockThreshold: number | null;
+  pinned: number | boolean;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -38,9 +39,12 @@ function toDto(row: {
     purchaseUnitShortName: row.purchaseUnitShortName,
     purchaseUnitFactor: row.purchaseUnitFactor,
     lowStockThreshold: row.lowStockThreshold,
+    pinned: Boolean(row.pinned),
     createdAt: Math.floor(row.createdAt.getTime() / 1000),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1000),
-    deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1000) : null,
+    deletedAt: row.deletedAt
+      ? Math.floor(row.deletedAt.getTime() / 1000)
+      : null,
   };
 }
 
@@ -52,6 +56,7 @@ const variantSelect = {
   purchaseUnitId: variants.purchaseUnitId,
   purchaseUnitFactor: variants.purchaseUnitFactor,
   lowStockThreshold: variants.lowStockThreshold,
+  pinned: variants.pinned,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
   deletedAt: variants.deletedAt,
@@ -87,7 +92,11 @@ export const variantService = {
 
     const rows = await baseJoin(db.select(variantSelect))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(asc(variants.productId), asc(variants.name))
+      .orderBy(
+        desc(variants.pinned), // pinned first
+        asc(variants.productId),
+        asc(variants.name)
+      )
       .limit(query.limit)
       .offset(query.offset);
 
@@ -141,6 +150,21 @@ export const variantService = {
 
     const updated = await this.getById(input.id);
     if (!updated) throw new Error(`Variant ${input.id} not found`);
+    return updated;
+  },
+
+  /**
+   * Toggle pin state on a variant.
+   */
+  async setPinned(id: number, pinned: boolean): Promise<Variant> {
+    const db = getDb();
+    await db
+      .update(variants)
+      .set({ pinned, updatedAt: new Date() })
+      .where(eq(variants.id, id));
+
+    const updated = await this.getById(id);
+    if (!updated) throw new Error(`Variant ${id} not found`);
     return updated;
   },
 

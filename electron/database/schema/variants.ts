@@ -11,27 +11,17 @@ export const variants = sqliteTable(
       .references(() => products.id),
     name: text("name").notNull(),
 
-    /** The unit stock is tracked in. All quantities are stored in this unit. */
     baseUnitId: integer("base_unit_id")
       .notNull()
       .references(() => units.id),
 
-    /**
-     * Bulk/purchase unit — e.g. Carton, Crate, Dozen.
-     * Optional. If null, the variant can only be bought/sold in base unit.
-     */
     purchaseUnitId: integer("purchase_unit_id").references(() => units.id),
-
-    /**
-     * How many BASE units are in ONE purchase unit.
-     * Example: 24 means "1 Carton = 24 Packs"
-     *
-     * Must be a positive integer. Whole numbers only (no fractional cartons).
-     * Always paired with purchaseUnitId — both set or both null.
-     */
     purchaseUnitFactor: integer("purchase_unit_factor"),
 
     lowStockThreshold: quantity("low_stock_threshold"),
+
+    /** Pinned items sort to the top of lists and search results */
+    pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
 
     ...timestamps,
     ...softDelete,
@@ -41,6 +31,7 @@ export const variants = sqliteTable(
     unitIdx: index("variants_unit_idx").on(t.baseUnitId),
     purchaseUnitIdx: index("variants_purchase_unit_idx").on(t.purchaseUnitId),
     nameIdx: index("variants_name_idx").on(t.name),
+    pinnedIdx: index("variants_pinned_idx").on(t.pinned),
   })
 );
 

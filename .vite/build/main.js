@@ -5444,22 +5444,12 @@ const variants = sqliteTable(
     id: integer$1("id").primaryKey({ autoIncrement: true }),
     productId: integer$1("product_id").notNull().references(() => products.id),
     name: text("name").notNull(),
-    /** The unit stock is tracked in. All quantities are stored in this unit. */
     baseUnitId: integer$1("base_unit_id").notNull().references(() => units.id),
-    /**
-     * Bulk/purchase unit — e.g. Carton, Crate, Dozen.
-     * Optional. If null, the variant can only be bought/sold in base unit.
-     */
     purchaseUnitId: integer$1("purchase_unit_id").references(() => units.id),
-    /**
-     * How many BASE units are in ONE purchase unit.
-     * Example: 24 means "1 Carton = 24 Packs"
-     *
-     * Must be a positive integer. Whole numbers only (no fractional cartons).
-     * Always paired with purchaseUnitId — both set or both null.
-     */
     purchaseUnitFactor: integer$1("purchase_unit_factor"),
     lowStockThreshold: quantity("low_stock_threshold"),
+    /** Pinned items sort to the top of lists and search results */
+    pinned: integer$1("pinned", { mode: "boolean" }).notNull().default(false),
     ...timestamps,
     ...softDelete
   },
@@ -5467,7 +5457,8 @@ const variants = sqliteTable(
     productIdx: index("variants_product_idx").on(t.productId),
     unitIdx: index("variants_unit_idx").on(t.baseUnitId),
     purchaseUnitIdx: index("variants_purchase_unit_idx").on(t.purchaseUnitId),
-    nameIdx: index("variants_name_idx").on(t.name)
+    nameIdx: index("variants_name_idx").on(t.name),
+    pinnedIdx: index("variants_pinned_idx").on(t.pinned)
   })
 );
 const variantsRelations = relations(variants, ({ one }) => ({
@@ -11194,6 +11185,7 @@ function toDto$4(row) {
     purchaseUnitShortName: row.purchaseUnitShortName,
     purchaseUnitFactor: row.purchaseUnitFactor,
     lowStockThreshold: row.lowStockThreshold,
+    pinned: Boolean(row.pinned),
     createdAt: Math.floor(row.createdAt.getTime() / 1e3),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
     deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1e3) : null
@@ -11207,6 +11199,7 @@ const variantSelect = {
   purchaseUnitId: variants.purchaseUnitId,
   purchaseUnitFactor: variants.purchaseUnitFactor,
   lowStockThreshold: variants.lowStockThreshold,
+  pinned: variants.pinned,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
   deletedAt: variants.deletedAt,
@@ -11233,7 +11226,12 @@ const variantService = {
         or(like(variants.name, term), like(sql`p.name`, term))
       );
     }
-    const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(asc(variants.productId), asc(variants.name)).limit(query.limit).offset(query.offset);
+    const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(
+      desc(variants.pinned),
+      // pinned first
+      asc(variants.productId),
+      asc(variants.name)
+    ).limit(query.limit).offset(query.offset);
     return rows.map(toDto$4);
   },
   async getById(id) {
@@ -11270,6 +11268,16 @@ const variantService = {
     await db.update(variants).set(updateValues).where(eq(variants.id, input.id));
     const updated = await this.getById(input.id);
     if (!updated) throw new Error(`Variant ${input.id} not found`);
+    return updated;
+  },
+  /**
+   * Toggle pin state on a variant.
+   */
+  async setPinned(id, pinned) {
+    const db = getDb();
+    await db.update(variants).set({ pinned, updatedAt: /* @__PURE__ */ new Date() }).where(eq(variants.id, id));
+    const updated = await this.getById(id);
+    if (!updated) throw new Error(`Variant ${id} not found`);
     return updated;
   },
   async softDelete(id) {
@@ -11360,6 +11368,12 @@ function registerVariantIpc() {
     await variantService.restore(id);
     return { ok: true };
   });
+  require$$3$1.ipcMain.handle(
+    "variant:setPinned",
+    async (_e, payload) => {
+      return variantService.setPinned(payload.id, payload.pinned);
+    }
+  );
 }
 function toPurchaseDto(row) {
   return {
@@ -11618,6 +11632,7 @@ const inventoryService = {
           pu.name                                   AS purchaseUnitName,
           pu.short_name                             AS purchaseUnitShortName,
           v.low_stock_threshold                     AS lowStockThreshold,
+                    v.pinned                                  AS pinned,
           SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
           COUNT(*)                                  AS activeBatchCount,
@@ -11676,6 +11691,7 @@ const inventoryService = {
         purchaseUnitName: r.purchaseUnitName,
         purchaseUnitShortName: r.purchaseUnitShortName,
         purchaseUnitFactor: r.purchaseUnitFactor,
+        pinned: Boolean(r.pinned),
         currentStock,
         avgCost,
         stockValue: stockValuePaisa,
@@ -11697,6 +11713,7 @@ const inventoryService = {
     }
     const sort = query.sort ?? "name";
     items.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       switch (sort) {
         case "name":
           return a.productName.localeCompare(b.productName) || a.variantName.localeCompare(b.variantName);

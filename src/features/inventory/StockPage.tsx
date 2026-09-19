@@ -8,6 +8,8 @@ import { StockRow } from "./StockRow";
 import { PriceHistoryModal } from "./PriceHistoryModal";
 import { useStock, useInventoryTotals } from "./hooks";
 import { formatMoney } from "@/lib/format";
+import { variantApi } from "../variants/api";
+import { toast } from "@/lib/toast";
 import type { StockItem } from "../../../electron/shared/types/inventory";
 
 type FilterOption = "all" | "in" | "low" | "out";
@@ -33,8 +35,19 @@ export function StockPage() {
     [search, filter, sort]
   );
 
-  const { data, loading } = useStock(query);
-  const { data: totals } = useInventoryTotals();
+  const { data, loading, reload } = useStock(query);
+  const { data: totals, reload: reloadTotals } = useInventoryTotals();
+
+  async function handleTogglePin(item: StockItem) {
+    try {
+      await variantApi.setPinned(item.variantId, !item.pinned);
+      toast.success(item.pinned ? "Unpinned" : "Pinned to top");
+      await reload();
+      await reloadTotals();
+    } catch (e) {
+      toast.error((e as Error).message ?? "Failed to update");
+    }
+  }
 
   return (
     <>
@@ -138,6 +151,7 @@ export function StockPage() {
                 key={item.variantId}
                 item={item}
                 onShowPriceHistory={() => setHistoryItem(item)}
+                onTogglePin={() => handleTogglePin(item)}
               />
             ))}
           </div>
@@ -151,6 +165,8 @@ export function StockPage() {
         productName={historyItem?.productName ?? ""}
         variantName={historyItem?.variantName ?? ""}
         baseUnitShortName={historyItem?.baseUnitShortName ?? ""}
+        purchaseUnitShortName={historyItem?.purchaseUnitShortName}
+        purchaseUnitFactor={historyItem?.purchaseUnitFactor}
       />
     </>
   );

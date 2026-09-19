@@ -39,4 +39,8 @@ export const variantApi = {
   async restore(id: number): Promise<void> {
     await window.api.variant.restore(id);
   },
+
+    async setPinned(id: number, pinned: boolean): Promise<Variant> {
+    return window.api.variant.setPinned({ id, pinned });
+  },
 };
