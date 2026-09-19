@@ -5546,7 +5546,6 @@ const stockBatches = sqliteTable(
   {
     id: integer$1("id").primaryKey({ autoIncrement: true }),
     variantId: integer$1("variant_id").notNull().references(() => variants.id),
-    // Nullable: positive adjustments create batches without a purchase
     purchaseId: integer$1("purchase_id").references(() => purchases.id),
     purchasePrice: money("purchase_price").notNull(),
     suggestedRetailPrice: money("suggested_retail_price"),
@@ -5554,6 +5553,15 @@ const stockBatches = sqliteTable(
     quantityPurchased: quantity("quantity_purchased").notNull(),
     remainingQuantity: quantity("remaining_quantity").notNull(),
     purchaseDate: integer$1("purchase_date", { mode: "timestamp" }).notNull(),
+    /**
+     * How this batch was created:
+     *   "purchase"  → normal purchase (default)
+     *   "opening"   → opening stock migration
+     *   "adjustment"→ positive adjustment (e.g. return)
+     */
+    source: text("source", {
+      enum: ["purchase", "opening", "adjustment"]
+    }).notNull().default("purchase"),
     ...timestamps
   },
   (t) => ({
@@ -5784,7 +5792,14 @@ const bills = sqliteTable(
     customerId: integer$1("customer_id").references(() => customers.id),
     billDate: integer$1("bill_date", { mode: "timestamp" }).notNull(),
     totalAmount: money("total_amount").notNull(),
+    /** Customer's outstanding BEFORE this bill was created (for display only) */
+    previousDue: money("previous_due").notNull().default(0),
     paidAmount: money("paid_amount").notNull().default(0),
+    /**
+     * Amount physically received from customer at bill time.
+     * May exceed paidAmount if the excess was applied to previous dues.
+     */
+    amountReceived: money("amount_received").notNull().default(0),
     remainingAmount: money("remaining_amount").notNull().default(0),
     cogs: money("cogs").notNull().default(0),
     status: text("status", {
@@ -12047,7 +12062,9 @@ function toBillDto(row) {
     customerName: row.customerName,
     billDate: Math.floor(row.billDate.getTime() / 1e3),
     totalAmount: row.totalAmount,
+    previousDue: row.previousDue,
     paidAmount: row.paidAmount,
+    amountReceived: row.amountReceived,
     remainingAmount: row.remainingAmount,
     cogs: row.cogs,
     grossProfit: row.totalAmount - row.cogs,
@@ -12068,11 +12085,11 @@ const billService = {
   /**
    * Create a bill.
    *
-   * - If status is "finalized": run full FIFO consumption, update batches,
-   *   write ledger, update customer balance.
-   * - If status is "draft" or "held": skip all business-side effects. Just
-   *   save the header + items (so we can reload + edit later). No stock change,
-   *   no Khaata.
+   * previousDue is computed ON THE BACKEND from customers.cachedOutstanding
+   * to guarantee accuracy. The frontend does not send it.
+   *
+   * Customer's outstanding changes by (totalAmount − paidAmount):
+   *   newOutstanding = oldOutstanding + (totalAmount − paidAmount)
    */
   async create(input) {
     const db = getDb();
@@ -12080,15 +12097,27 @@ const billService = {
     const billDate = input.billDate ?? /* @__PURE__ */ new Date();
     const billNumber = await generateBillNumber();
     const paidAmount = input.paidAmount ?? 0;
+    const amountReceived = input.amountReceived ?? paidAmount;
     const status = input.status ?? "finalized";
     const isDraftish = status === "draft" || status === "held";
     const billId = db.transaction((tx) => {
+      let previousDue = 0;
+      let customerOutstandingBefore = 0;
+      if (!isDraftish && input.customerId) {
+        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, input.customerId)).limit(1).all();
+        if (cust) {
+          customerOutstandingBefore = cust.cachedOutstanding;
+          previousDue = cust.cachedOutstanding;
+        }
+      }
       const [bill] = tx.insert(bills).values({
         billNumber,
         customerId: input.customerId ?? null,
         billDate,
         totalAmount,
+        previousDue: isDraftish ? 0 : previousDue,
         paidAmount: isDraftish ? 0 : paidAmount,
+        amountReceived: isDraftish ? 0 : amountReceived,
         remainingAmount: 0,
         cogs: 0,
         status,
@@ -12162,14 +12191,12 @@ const billService = {
         remainingAmount,
         updatedAt: /* @__PURE__ */ new Date()
       }).where(eq(bills.id, bill.id)).run();
-      if (!isDraftish && input.customerId && remainingAmount > 0) {
-        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, input.customerId)).limit(1).all();
-        if (cust) {
-          tx.update(customers).set({
-            cachedOutstanding: cust.cachedOutstanding + remainingAmount,
-            updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq(customers.id, input.customerId)).run();
-        }
+      if (!isDraftish && input.customerId) {
+        const delta = totalAmount - paidAmount;
+        tx.update(customers).set({
+          cachedOutstanding: customerOutstandingBefore + delta,
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq(customers.id, input.customerId)).run();
       }
       return bill.id;
     });
@@ -12177,12 +12204,6 @@ const billService = {
     if (!created) throw new Error("Failed to load created bill");
     return created;
   },
-  /**
-   * Finalize a draft or held bill. Runs the FIFO consumption NOW (using
-   * current stock), then updates balances.
-   *
-   * Throws if the bill is not a draft or held, or if stock is insufficient.
-   */
   async finalize(billId) {
     const db = getDb();
     const [bill] = await db.select().from(bills).where(eq(bills.id, billId)).limit(1);
@@ -12241,30 +12262,29 @@ const billService = {
         totalCogs += lineCogs;
       }
       const remainingAmount = bill.totalAmount - bill.paidAmount;
+      let customerOutstandingBefore = 0;
+      if (bill.customerId) {
+        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, bill.customerId)).limit(1).all();
+        if (cust) customerOutstandingBefore = cust.cachedOutstanding;
+      }
       tx.update(bills).set({
         status: "finalized",
         cogs: totalCogs,
         remainingAmount,
         updatedAt: /* @__PURE__ */ new Date()
       }).where(eq(bills.id, billId)).run();
-      if (bill.customerId && remainingAmount > 0) {
-        const [cust] = tx.select({ cachedOutstanding: customers.cachedOutstanding }).from(customers).where(eq(customers.id, bill.customerId)).limit(1).all();
-        if (cust) {
-          tx.update(customers).set({
-            cachedOutstanding: cust.cachedOutstanding + remainingAmount,
-            updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq(customers.id, bill.customerId)).run();
-        }
+      if (bill.customerId) {
+        const delta = bill.totalAmount - bill.paidAmount;
+        tx.update(customers).set({
+          cachedOutstanding: customerOutstandingBefore + delta,
+          updatedAt: /* @__PURE__ */ new Date()
+        }).where(eq(customers.id, bill.customerId)).run();
       }
     });
     const updated = await this.getById(billId);
     if (!updated) throw new Error("Failed to load finalized bill");
     return updated;
   },
-  /**
-   * Delete a draft or held bill. Doesn't touch inventory (nothing to
-   * restore). Finalized bills cannot be deleted.
-   */
   async deleteDraft(billId) {
     const db = getDb();
     const [bill] = await db.select().from(bills).where(eq(bills.id, billId)).limit(1);
@@ -12283,7 +12303,9 @@ const billService = {
       customerName: sql`c.name`,
       billDate: bills.billDate,
       totalAmount: bills.totalAmount,
+      previousDue: bills.previousDue,
       paidAmount: bills.paidAmount,
+      amountReceived: bills.amountReceived,
       remainingAmount: bills.remainingAmount,
       cogs: bills.cogs,
       status: bills.status,
@@ -12390,7 +12412,9 @@ const billService = {
       customerName: sql`c.name`,
       billDate: bills.billDate,
       totalAmount: bills.totalAmount,
+      previousDue: bills.previousDue,
       paidAmount: bills.paidAmount,
+      amountReceived: bills.amountReceived,
       remainingAmount: bills.remainingAmount,
       cogs: bills.cogs,
       status: bills.status,
@@ -12413,10 +12437,6 @@ const billService = {
     const [row] = await db.select({ count: sql`count(*)` }).from(bills).where(conditions.length > 0 ? and(...conditions) : void 0);
     return row?.count ?? 0;
   },
-  /**
-  * Preview the FIFO cost for a given variant + base-unit quantity.
-  * Does NOT consume stock. Pure read-only.
-  */
   async previewFifoCost(input) {
     const db = getDb();
     const batches = await db.select().from(stockBatches).where(
@@ -12475,7 +12495,10 @@ const billLineSchema = object({
 const createBillSchema = object({
   customerId: number().int().positive().nullable().optional(),
   billDate: date().optional(),
+  previousDue: number().int().nonnegative().optional().default(0),
   paidAmount: number().int().nonnegative().optional().default(0),
+  /** Raw cash received — may exceed paidAmount */
+  amountReceived: number().int().nonnegative().optional().default(0),
   remarks: optionalTrimmedString$3(500),
   status: _enum(["draft", "held", "finalized"]).optional().default("finalized"),
   lines: array(billLineSchema).min(1, "Add at least one item")
@@ -12492,7 +12515,6 @@ const billListQuerySchema = object({
 const fifoCostPreviewSchema = object({
   variantId: number().int().positive(),
   quantity: number().int().positive()
-  // milli-units, base unit
 });
 function registerBillIpc() {
   require$$3$1.ipcMain.handle("bill:list", async (_e, rawQuery) => {
@@ -13752,6 +13774,21 @@ function getBaseCss(size) {
       .summary td { border: none; padding: 2px 8px; }
       .summary .label { text-align: right; color: #555; }
       .summary .value { text-align: right; font-weight: 600; }
+
+      .shop-name-urdu {
+        font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        direction: rtl;
+        color: #333;
+        margin-top: 2px;
+      }
+      .urdu-footer {
+        font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+        font-size: 12px;
+        direction: rtl;
+        margin-top: 6px;
+      }
     `;
   }
   const maxWidth = size === "thermal_80" ? "72mm" : "50mm";
@@ -13785,6 +13822,22 @@ function getBaseCss(size) {
     td.price, td.total { text-align: right; width: 26%; }
     .total-line { font-weight: 700; border-top: 1px solid #000; padding-top: 3px; margin-top: 3px; }
     .footer { text-align: center; font-size: 0.9em; margin-top: 6px; }
+
+    .shop-name-urdu {
+      text-align: center;
+      font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+      font-size: 1.1em;
+      font-weight: 700;
+      direction: rtl;
+      margin-bottom: 4px;
+    }
+    .footer-urdu {
+      text-align: center;
+      font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+      font-size: 0.9em;
+      direction: rtl;
+      margin-top: 4px;
+    }
   `;
 }
 function registerPrintIpc() {
@@ -14405,7 +14458,8 @@ function registerBackupIpc() {
   });
 }
 const DEFAULT_SETTINGS = {
-  shopName: "Apni Dukan",
+  shopName: "Sheikh Mushtaq General Store",
+  shopNameUrdu: "",
   shopAddress: "",
   shopPhone: "",
   taxNumber: "",
@@ -14422,6 +14476,7 @@ const optionalTrimmedString = (max) => union([string(), _null(), _undefined()]).
 });
 const updateSettingsSchema = object({
   shopName: string().trim().min(1, "Shop name is required").max(120),
+  shopNameUrdu: optionalTrimmedString(120),
   shopAddress: optionalTrimmedString(300),
   shopPhone: optionalTrimmedString(30),
   taxNumber: optionalTrimmedString(30),
@@ -14607,6 +14662,158 @@ function registerUdhaarIpc() {
     return { ok: true };
   });
 }
+const openingStockService = {
+  /**
+   * Create opening stock batches for a list of variants.
+   * Each batch is marked with source = "opening" and gets a stock ledger entry.
+   */
+  async create(input) {
+    const db = getDb();
+    const now = /* @__PURE__ */ new Date();
+    const ids = db.transaction((tx) => {
+      const createdIds = [];
+      for (const line of input.lines) {
+        const [batch] = tx.insert(stockBatches).values({
+          variantId: line.variantId,
+          purchaseId: null,
+          purchasePrice: line.purchasePrice,
+          suggestedRetailPrice: null,
+          suggestedWholesalePrice: null,
+          quantityPurchased: line.quantity,
+          remainingQuantity: line.quantity,
+          purchaseDate: now,
+          source: "opening"
+        }).returning({ id: stockBatches.id }).all();
+        tx.insert(stockLedger).values({
+          batchId: batch.id,
+          variantId: line.variantId,
+          quantityChange: line.quantity,
+          unitCost: line.purchasePrice,
+          movementType: "purchase",
+          referenceType: null,
+          referenceId: null,
+          notes: "Opening stock"
+        }).run();
+        createdIds.push(batch.id);
+      }
+      return createdIds;
+    });
+    return this.getEntriesByIds(ids);
+  },
+  /**
+   * List existing opening stock entries.
+   */
+  async list() {
+    const db = getDb();
+    const rows = await db.select({
+      batchId: stockBatches.id,
+      variantId: stockBatches.variantId,
+      quantity: stockBatches.quantityPurchased,
+      purchasePrice: stockBatches.purchasePrice,
+      source: stockBatches.source,
+      purchaseDate: stockBatches.purchaseDate,
+      productName: sql`p.name`,
+      variantName: sql`v.name`,
+      baseUnitShortName: sql`u.short_name`
+    }).from(stockBatches).innerJoin(sql`variants v`, sql`v.id = ${stockBatches.variantId}`).innerJoin(sql`products p`, sql`p.id = v.product_id`).innerJoin(sql`units u`, sql`u.id = v.base_unit_id`).where(eq(stockBatches.source, "opening")).orderBy(desc(stockBatches.id));
+    return rows.map((r) => ({
+      batchId: r.batchId,
+      variantId: r.variantId,
+      quantity: r.quantity,
+      purchasePrice: r.purchasePrice,
+      source: r.source,
+      purchaseDate: Math.floor(r.purchaseDate.getTime() / 1e3),
+      productName: r.productName,
+      variantName: r.variantName,
+      baseUnitShortName: r.baseUnitShortName
+    }));
+  },
+  /**
+   * Get entries by batch IDs.
+   */
+  async getEntriesByIds(batchIds) {
+    if (batchIds.length === 0) return [];
+    const db = getDb();
+    const ids = batchIds.map((id) => `'${id}'`).join(",");
+    const rows = db.$client.prepare(
+      `
+        SELECT
+          b.id                   AS batchId,
+          b.variant_id           AS variantId,
+          b.quantity_purchased   AS quantity,
+          b.purchase_price       AS purchasePrice,
+          b.source               AS source,
+          b.purchase_date        AS purchaseDate,
+          p.name                 AS productName,
+          v.name                 AS variantName,
+          u.short_name           AS baseUnitShortName
+        FROM stock_batches b
+        INNER JOIN variants v ON v.id = b.variant_id
+        INNER JOIN products p ON p.id = v.product_id
+        INNER JOIN units    u ON u.id = v.base_unit_id
+        WHERE b.id IN (${ids})
+        `
+    ).all();
+    return rows.map((r) => ({
+      batchId: r.batchId,
+      variantId: r.variantId,
+      quantity: r.quantity,
+      purchasePrice: r.purchasePrice,
+      source: r.source,
+      purchaseDate: Math.floor(r.purchaseDate),
+      productName: r.productName,
+      variantName: r.variantName,
+      baseUnitShortName: r.baseUnitShortName
+    }));
+  },
+  /**
+   * Delete an opening stock batch (only if source = "opening").
+   */
+  async remove(batchId) {
+    const db = getDb();
+    db.transaction((tx) => {
+      const [batch] = tx.select().from(stockBatches).where(
+        and(
+          eq(stockBatches.id, batchId),
+          eq(stockBatches.source, "opening")
+        )
+      ).limit(1).all();
+      if (!batch) {
+        throw new Error("Opening stock entry not found or not deletable");
+      }
+      if (batch.remainingQuantity !== batch.quantityPurchased) {
+        throw new Error(
+          "Cannot delete — this opening stock has been partially sold."
+        );
+      }
+      tx.delete(stockLedger).where(eq(stockLedger.batchId, batchId)).run();
+      tx.delete(stockBatches).where(eq(stockBatches.id, batchId)).run();
+    });
+  }
+};
+const openingStockLineSchema = object({
+  variantId: number().int().positive(),
+  /** milli-units (base unit) */
+  quantity: number().int().positive("Quantity must be positive"),
+  /** paisa per base unit */
+  purchasePrice: number().int().nonnegative("Cost cannot be negative")
+});
+const createOpeningStockSchema = object({
+  lines: array(openingStockLineSchema).min(1, "Add at least one item")
+});
+function registerOpeningStockIpc() {
+  require$$3$1.ipcMain.handle("openingStock:list", async () => {
+    return openingStockService.list();
+  });
+  require$$3$1.ipcMain.handle("openingStock:create", async (_e, rawInput) => {
+    const input = createOpeningStockSchema.parse(rawInput);
+    return openingStockService.create(input);
+  });
+  require$$3$1.ipcMain.handle("openingStock:delete", async (_e, batchId) => {
+    await openingStockService.remove(batchId);
+    return { ok: true };
+  });
+}
 function registerAllIpc() {
   registerAppIpc();
   registerCustomerIpc();
@@ -14626,6 +14833,7 @@ function registerAllIpc() {
   registerBackupIpc();
   registerSettingsIpc();
   registerUdhaarIpc();
+  registerOpeningStockIpc();
 }
 if (started) {
   require$$3$1.app.quit();

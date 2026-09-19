@@ -1,0 +1,1 @@
+ALTER TABLE `bills` ADD `amount_received` integer DEFAULT 0 NOT NULL;

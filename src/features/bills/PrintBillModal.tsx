@@ -10,6 +10,8 @@ type Props = {
   open: boolean;
   onClose: () => void;
   bill: BillDetail;
+  /** Already on bill.previousDue, passed for convenience */
+  previousOutstanding?: number;
 };
 
 const SIZE_OPTIONS: {
@@ -34,14 +36,22 @@ const SIZE_OPTIONS: {
   },
 ];
 
-export function PrintBillModal({ open, onClose, bill }: Props) {
+export function PrintBillModal({
+  open,
+  onClose,
+  bill,
+  previousOutstanding,
+}: Props) {
   const [size, setSize] = useState<PrintSize>("thermal_80");
   const [printing, setPrinting] = useState(false);
+
+  // Use the passed value or the bill's stored previousDue
+  const prevDue = previousOutstanding ?? bill.previousDue ?? 0;
 
   async function handlePrint() {
     setPrinting(true);
     try {
-      await printBill(bill, size);
+      await printBill(bill, size, undefined, prevDue);
       toast.success(
         "Print dialog opened — pick a printer or 'Save as PDF'"
       );
@@ -102,12 +112,22 @@ export function PrintBillModal({ open, onClose, bill }: Props) {
           </button>
         ))}
 
+        {prevDue > 0 && (
+          <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 flex gap-2">
+            <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              <strong>Previous due on print:</strong> The printed bill will
+              show the previous outstanding and add it to the Grand Total.
+            </p>
+          </div>
+        )}
+
         <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 p-3 flex gap-2">
           <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
           <p className="text-xs text-blue-700 dark:text-blue-400">
             <strong>No printer?</strong> In the print dialog, choose{" "}
             <strong>"Save as PDF"</strong> (or "Microsoft Print to PDF" on
-            Windows). The file saves wherever you choose.
+            Windows).
           </p>
         </div>
       </div>

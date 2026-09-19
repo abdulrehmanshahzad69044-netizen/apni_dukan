@@ -22,6 +22,7 @@ import { ExpensesPage } from "@/features/expenses/ExpensesPage";
 import { CompanyPaymentsPage } from "@/features/company-payments/CompanyPaymentsPage";
 import { ReportsPage } from "@/features/reports/ReportsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { OpeningStockPage } from "@/features/opening-stock/OpeningStockPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
 
 export function AppRouter() {
@@ -46,6 +47,7 @@ export function AppRouter() {
         <Route path="purchases/:id" element={<PurchaseDetailPage />} />
         <Route path="inventory" element={<StockPage />} />
         <Route path="adjustments" element={<AdjustmentsPage />} />
+        <Route path="opening-stock" element={<OpeningStockPage />} />
 
         <Route path="khaata" element={<KhaataPage />} />
         <Route path="khaata/:customerId" element={<KhaataDetailPage />} />

@@ -33,7 +33,9 @@ import {
   defaultBillUnit,
 } from "@/lib/units";
 import { billApi } from "./api";
+import { paymentApi } from "../payments/api";
 import { PriceModeToggle, type PriceMode } from "./PriceModeToggle";
+import { CustomerPicker } from "@/components/ui/CustomerPicker";
 import { useCustomers } from "../customers/hooks";
 import { useVariants } from "../variants/hooks";
 import { useStock } from "../inventory/hooks";
@@ -61,7 +63,6 @@ type LineItem = {
   latestRetailPricePaisa: number | null;
   latestWholesalePricePaisa: number | null;
   availableStock: number;
-  /** Weighted average cost per base unit (paisa) */
   avgCostPaisa: number;
 };
 
@@ -109,8 +110,6 @@ export function BillEntryPage() {
     return customers.find((c) => c.id === customerId) ?? null;
   }, [customerId, customers]);
 
-  // ---------- Totals ----------
-
   const billTotal = useMemo(() => {
     return lines.reduce((sum, l) => {
       const qty = Number(l.quantity) || 0;
@@ -127,10 +126,7 @@ export function BillEntryPage() {
     return rupeesToPaisa(n);
   }, [paidAmount]);
 
-  // Clamp remaining to 0 — no negative remaining
   const remainingAfter = Math.max(0, totalRecoverable - paidPaisa);
-
-  // ---------- Actions ----------
 
   function addVariant(v: Variant) {
     if (lines.some((l) => l.variantId === v.id)) {
@@ -265,10 +261,18 @@ export function BillEntryPage() {
 
     setSaving(true);
     try {
+      // Cap the paid amount on the bill at the bill's own subtotal.
+      // Any excess goes to previous dues via the FIFO payment engine.
+      const paidForThisBill =
+        status === "finalized" ? Math.min(paidPaisa, billTotal) : 0;
+      const excess = status === "finalized" ? paidPaisa - paidForThisBill : 0;
+
       const created = await billApi.create({
         customerId: customerId === "" ? null : Number(customerId),
         billDate: new Date(billDate),
-        paidAmount: status === "finalized" ? paidPaisa : 0,
+        // previousDue is computed on the backend — don't send it
+        paidAmount: paidForThisBill,
+        amountReceived: status === "finalized" ? paidPaisa : 0,
         remarks: remarks.trim(),
         status,
         lines: lines.map((l) => {
@@ -293,6 +297,23 @@ export function BillEntryPage() {
           };
         }),
       });
+
+      // If the customer paid extra beyond this bill, apply it via FIFO
+      // to their previous unpaid bills.
+      if (excess > 0 && customerId !== "") {
+        try {
+          await paymentApi.create({
+            customerId: Number(customerId),
+            amount: excess,
+            remarks: `Auto-applied from bill ${created.billNumber}`,
+          });
+        } catch (payErr) {
+          console.error("Excess payment error:", payErr);
+          toast.error(
+            "Bill saved, but excess couldn't be applied to previous dues. Check Khaata."
+          );
+        }
+      }
 
       const label =
         status === "draft" ? "Draft" : status === "held" ? "Held bill" : "Bill";
@@ -344,35 +365,15 @@ export function BillEntryPage() {
           </div>
         }
       >
-        {/* Header */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="space-y-1.5">
             <Label>Customer</Label>
-            <div className="flex gap-2">
-              <select
-                value={customerId}
-                onChange={(e) =>
-                  setCustomerId(
-                    e.target.value === "" ? "" : Number(e.target.value)
-                  )
-                }
-                className="flex-1 h-10 px-3 rounded-lg border bg-[rgb(var(--bg))] text-sm"
-              >
-                <option value="">— Walk-in (cash) —</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <Button
-                variant="outline"
-                onClick={() => setQuickAddOpen(true)}
-                title="Quick add customer"
-              >
-                <UserPlus className="w-4 h-4" />
-              </Button>
-            </div>
+            <CustomerPicker
+              customers={customers}
+              selectedId={customerId === "" ? null : Number(customerId)}
+              onSelect={(c) => setCustomerId(c ? c.id : "")}
+              onQuickAdd={() => setQuickAddOpen(true)}
+            />
           </div>
 
           <div className="space-y-1.5">
@@ -410,7 +411,6 @@ export function BillEntryPage() {
           </div>
         )}
 
-        {/* Search */}
         <div className="rounded-xl border bg-[rgb(var(--card))] p-4 mb-6">
           <Label className="mb-2 block">Add Item</Label>
           <div className="relative">
@@ -485,7 +485,6 @@ export function BillEntryPage() {
           )}
         </div>
 
-        {/* Lines */}
         {lines.length === 0 ? (
           <EmptyState
             icon={<Plus className="w-6 h-6" />}
@@ -517,8 +516,6 @@ export function BillEntryPage() {
               const showBasePreview = factor > 1;
 
               const wholesaleAvailable = l.latestWholesalePricePaisa !== null;
-
-              // COST — always from avgCostPaisa (per base unit)
               const costPerEnteredUnitPaisa = l.avgCostPaisa * factor;
 
               return (
@@ -660,7 +657,6 @@ export function BillEntryPage() {
           </div>
         )}
 
-        {/* Summary */}
         <div className="rounded-xl border bg-[rgb(var(--card))] p-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">

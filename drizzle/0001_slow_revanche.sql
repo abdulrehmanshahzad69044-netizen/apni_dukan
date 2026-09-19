@@ -1,0 +1,1 @@
+ALTER TABLE `stock_batches` ADD `source` text DEFAULT 'purchase' NOT NULL;

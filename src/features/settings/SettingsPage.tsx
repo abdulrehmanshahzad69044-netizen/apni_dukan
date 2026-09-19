@@ -17,6 +17,7 @@ export function SettingsPage() {
   const [shopPhone, setShopPhone] = useState("");
   const [taxNumber, setTaxNumber] = useState("");
   const [receiptFooter, setReceiptFooter] = useState("");
+  const [shopNameUrdu, setShopNameUrdu] = useState("");
   const [receiptSize, setReceiptSize] = useState<"thermal_80" | "thermal_58" | "a4">(
     "thermal_80"
   );
@@ -27,6 +28,7 @@ export function SettingsPage() {
       setShopName(data.shopName);
       setShopAddress(data.shopAddress);
       setShopPhone(data.shopPhone);
+      setShopNameUrdu(data.shopNameUrdu ?? "");
       setTaxNumber(data.taxNumber);
       setReceiptFooter(data.receiptFooter);
       setReceiptSize(data.defaultReceiptSize);
@@ -42,6 +44,7 @@ export function SettingsPage() {
     try {
       await settingsApi.update({
         shopName: shopName.trim(),
+          shopNameUrdu: shopNameUrdu.trim(),
         shopAddress: shopAddress.trim(),
         shopPhone: shopPhone.trim(),
         taxNumber: taxNumber.trim(),
@@ -94,6 +97,20 @@ export function SettingsPage() {
               placeholder="e.g. Al-Madina Store"
             />
           </div>
+
+          <div className="space-y-1.5">
+  <Label htmlFor="set-name-urdu">
+    Shop Name (Urdu) <span className="text-[rgb(var(--muted-fg))] font-normal">— printed on bills</span>
+  </Label>
+  <Input
+    id="set-name-urdu"
+    value={shopNameUrdu}
+    onChange={(e) => setShopNameUrdu(e.target.value)}
+    placeholder="شیخ مشتاق جنرل اسٹور"
+    dir="rtl"
+    style={{ fontFamily: "'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', system-ui" }}
+  />
+</div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">

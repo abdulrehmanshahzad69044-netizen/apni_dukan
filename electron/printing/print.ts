@@ -88,6 +88,11 @@ function getWindowDimensions(size: PrintSize): {
 /**
  * Wraps the user HTML with a <style> block appropriate to the paper size.
  * Base fonts: monospace for thermal, sans-serif for A4.
+ *
+ * Note: We rely on system fonts only (offline-first). Windows ships with
+ * 'Jameel Noori Nastaleeq' if the Urdu font pack is installed; otherwise
+ * we fall back to 'Segoe UI' which renders Urdu readably but not in
+ * Nastaliq style. The critical part for Urdu is `direction: rtl`.
  */
 function wrapHtml(html: string, size: PrintSize): string {
   const baseCss = getBaseCss(size);
@@ -133,6 +138,21 @@ function getBaseCss(size: PrintSize): string {
       .summary td { border: none; padding: 2px 8px; }
       .summary .label { text-align: right; color: #555; }
       .summary .value { text-align: right; font-weight: 600; }
+
+      .shop-name-urdu {
+        font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        direction: rtl;
+        color: #333;
+        margin-top: 2px;
+      }
+      .urdu-footer {
+        font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+        font-size: 12px;
+        direction: rtl;
+        margin-top: 6px;
+      }
     `;
   }
   // Thermal CSS (58mm and 80mm share most styles)
@@ -167,6 +187,22 @@ function getBaseCss(size: PrintSize): string {
     td.price, td.total { text-align: right; width: 26%; }
     .total-line { font-weight: 700; border-top: 1px solid #000; padding-top: 3px; margin-top: 3px; }
     .footer { text-align: center; font-size: 0.9em; margin-top: 6px; }
+
+    .shop-name-urdu {
+      text-align: center;
+      font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+      font-size: 1.1em;
+      font-weight: 700;
+      direction: rtl;
+      margin-bottom: 4px;
+    }
+    .footer-urdu {
+      text-align: center;
+      font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', sans-serif;
+      font-size: 0.9em;
+      direction: rtl;
+      margin-top: 4px;
+    }
   `;
 }
 

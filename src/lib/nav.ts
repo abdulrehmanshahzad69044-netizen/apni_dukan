@@ -14,6 +14,7 @@ import {
   Ruler,
   Layers,
   Truck,
+  Package2,
   ClipboardList,
   HandCoins,
 } from "lucide-react";
@@ -42,5 +43,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Company Payments", to: "/company-payments", icon: HandCoins },
   { label: "Expenses", to: "/expenses", icon: TrendingDown },
   { label: "Reports", to: "/reports", icon: BarChart3 },
+    { label: "Opening Stock", to: "/opening-stock", icon: Package2 },
   { label: "Settings", to: "/settings", icon: Settings },
 ];

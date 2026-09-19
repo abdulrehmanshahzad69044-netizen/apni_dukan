@@ -14,31 +14,38 @@ export type ShopInfo = {
   phone?: string;
   footer?: string;
   taxNumber?: string;
+  /** Optional — used only for the grand total display */
+  showPreviousDueOnPrint?: boolean;
 };
 
 export const DEFAULT_SHOP_INFO: ShopInfo = {
-  name: "Sheikh Mushtaq General Store",
-  address: "Railway Road Gujrat",
+  name: "Apni Dukan",
+  address: "",
   phone: "",
-  footer: "Thank you for shopping!",
+  footer: "Thank you for your business!",
 };
 
 /**
  * Build the printable HTML for a bill.
- * The returned string is a fragment; the main process wraps it with CSS.
+ * English labels only.
  */
 export function buildBillHtml(
   bill: BillDetail,
   size: PrintSize,
-  shop: ShopInfo = DEFAULT_SHOP_INFO
+  shop: ShopInfo = DEFAULT_SHOP_INFO,
+  previousOutstanding: number = 0
 ): string {
-  if (size === "a4") return buildBillA4(bill, shop);
-  return buildBillThermal(bill, shop);
+  if (size === "a4") return buildBillA4(bill, shop, previousOutstanding);
+  return buildBillThermal(bill, shop, previousOutstanding);
 }
 
 /* ---------- Thermal (58mm / 80mm) ---------- */
 
-function buildBillThermal(bill: BillDetail, shop: ShopInfo): string {
+function buildBillThermal(
+  bill: BillDetail,
+  shop: ShopInfo,
+  previousOutstanding: number
+): string {
   const itemsHtml = bill.items
     .map(
       (i) => `
@@ -55,10 +62,10 @@ function buildBillThermal(bill: BillDetail, shop: ShopInfo): string {
     )
     .join("");
 
-  const previousOutstanding = 0; // Only shown if bill has a customer with pending. We compute below.
-  void previousOutstanding;
+  const grandTotal = bill.totalAmount + previousOutstanding;
+  const finalDue = grandTotal - (bill.amountReceived || bill.paidAmount);
 
-  const html = `
+  return `
     <div class="shop-name">${escapeHtml(shop.name)}</div>
     ${
       shop.address
@@ -86,17 +93,10 @@ function buildBillThermal(bill: BillDetail, shop: ShopInfo): string {
       <span class="label">Date:</span>
       <span class="value">${formatDateTime(bill.billDate)}</span>
     </div>
-    ${
-      bill.customerName
-        ? `<div class="row">
-            <span class="label">Customer:</span>
-            <span class="value">${escapeHtml(bill.customerName)}</span>
-          </div>`
-        : `<div class="row">
-            <span class="label">Customer:</span>
-            <span class="value">Walk-in</span>
-          </div>`
-    }
+    <div class="row">
+      <span class="label">Customer:</span>
+      <span class="value">${escapeHtml(bill.customerName ?? "Walk-in")}</span>
+    </div>
 
     <div class="divider"></div>
 
@@ -106,7 +106,7 @@ function buildBillThermal(bill: BillDetail, shop: ShopInfo): string {
           <th>Item</th>
           <th class="qty">Qty</th>
           <th class="price">Rate</th>
-          <th class="total">Total</th>
+          <th class="total">Amount</th>
         </tr>
       </thead>
       <tbody>
@@ -120,27 +120,47 @@ function buildBillThermal(bill: BillDetail, shop: ShopInfo): string {
       <span class="label">Items:</span>
       <span class="value">${bill.items.length}</span>
     </div>
-    <div class="row total-line">
-      <span class="label">Total:</span>
-      <span class="value">${formatMoney(bill.totalAmount, {
-        showDecimals: false,
-      })}</span>
-    </div>
+
     <div class="row">
-      <span class="label">Paid:</span>
-      <span class="value">${formatMoney(bill.paidAmount, {
-        showDecimals: false,
-      })}</span>
+      <span class="label">Subtotal:</span>
+      <span class="value">${formatMoney(bill.totalAmount, { showDecimals: false })}</span>
     </div>
+
     ${
-      bill.remainingAmount > 0
+      previousOutstanding > 0
+        ? `
+          <div class="row">
+            <span class="label">Previous Due:</span>
+            <span class="value">${formatMoney(previousOutstanding, { showDecimals: false })}</span>
+          </div>
+          <div class="row total-line">
+            <span class="label">GRAND TOTAL:</span>
+            <span class="value">${formatMoney(grandTotal, { showDecimals: false })}</span>
+          </div>
+        `
+        : `
+          <div class="row total-line">
+            <span class="label">TOTAL:</span>
+            <span class="value">${formatMoney(bill.totalAmount, { showDecimals: false })}</span>
+          </div>
+        `
+    }
+
+        <div class="row">
+      <span class="label">Paid Now:</span>
+      <span class="value">${formatMoney(bill.amountReceived || bill.paidAmount, { showDecimals: false })}</span>
+    </div>
+
+    ${
+      finalDue > 0
         ? `<div class="row bold">
-            <span class="label">Due:</span>
-            <span class="value">${formatMoney(bill.remainingAmount, {
-              showDecimals: false,
-            })}</span>
+            <span class="label">Balance Due:</span>
+            <span class="value">${formatMoney(finalDue, { showDecimals: false })}</span>
           </div>`
-        : ""
+        : `<div class="row bold">
+            <span class="label">Balance Due:</span>
+            <span class="value">Rs 0</span>
+          </div>`
     }
 
     ${
@@ -153,13 +173,15 @@ function buildBillThermal(bill: BillDetail, shop: ShopInfo): string {
     <div class="divider"></div>
     <div class="footer">${escapeHtml(shop.footer ?? "")}</div>
   `;
-
-  return html;
 }
 
 /* ---------- A4 Invoice ---------- */
 
-function buildBillA4(bill: BillDetail, shop: ShopInfo): string {
+function buildBillA4(
+  bill: BillDetail,
+  shop: ShopInfo,
+  previousOutstanding: number
+): string {
   const itemsHtml = bill.items
     .map(
       (i) => `
@@ -175,6 +197,9 @@ function buildBillA4(bill: BillDetail, shop: ShopInfo): string {
       `
     )
     .join("");
+
+  const grandTotal = bill.totalAmount + previousOutstanding;
+  const finalDue = grandTotal - (bill.amountReceived || bill.paidAmount);
 
   return `
     <div class="header">
@@ -197,7 +222,7 @@ function buildBillA4(bill: BillDetail, shop: ShopInfo): string {
       <div>
         <div class="muted" style="font-size: 11px;">BILL TO</div>
         <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">
-          ${bill.customerName ? escapeHtml(bill.customerName) : "Walk-in Customer"}
+          ${escapeHtml(bill.customerName ?? "Walk-in Customer")}
         </div>
       </div>
       <div class="right">
@@ -232,18 +257,33 @@ function buildBillA4(bill: BillDetail, shop: ShopInfo): string {
           <td class="label">Subtotal:</td>
           <td class="value">${formatMoney(bill.totalAmount)}</td>
         </tr>
-        <tr>
-          <td class="label">Paid:</td>
-          <td class="value">${formatMoney(bill.paidAmount)}</td>
-        </tr>
         ${
-          bill.remainingAmount > 0
-            ? `<tr>
-                <td class="label" style="font-weight: 700;">Due:</td>
-                <td class="value" style="font-weight: 700;">${formatMoney(bill.remainingAmount)}</td>
-              </tr>`
-            : ""
+          previousOutstanding > 0
+            ? `
+              <tr>
+                <td class="label">Previous Due:</td>
+                <td class="value">${formatMoney(previousOutstanding)}</td>
+              </tr>
+              <tr>
+                <td class="label" style="font-weight: 700; font-size: 14px;">GRAND TOTAL:</td>
+                <td class="value" style="font-weight: 700; font-size: 14px;">${formatMoney(grandTotal)}</td>
+              </tr>
+            `
+            : `
+              <tr>
+                <td class="label" style="font-weight: 700;">TOTAL:</td>
+                <td class="value" style="font-weight: 700;">${formatMoney(bill.totalAmount)}</td>
+              </tr>
+            `
         }
+                <tr>
+          <td class="label">Paid Now:</td>
+          <td class="value">${formatMoney(bill.amountReceived || bill.paidAmount)}</td>
+        </tr>
+        <tr>
+          <td class="label" style="font-weight: 700;">Balance Due:</td>
+          <td class="value" style="font-weight: 700;">${formatMoney(finalDue)}</td>
+        </tr>
       </table>
     </div>
 
@@ -274,13 +314,15 @@ function escapeHtml(s: string): string {
 
 /**
  * Trigger print via IPC.
+ * If the customer has a pending khaata, pass `previousOutstanding` so the
+ * printed bill folds it into the GRAND TOTAL.
  */
 export async function printBill(
   bill: BillDetail,
   size: PrintSize,
-  shop?: ShopInfo
+  shop?: ShopInfo,
+  previousOutstanding: number = 0
 ): Promise<void> {
-  // If no shop info provided, fetch from settings
   let shopInfo = shop;
   if (!shopInfo) {
     try {
@@ -296,7 +338,7 @@ export async function printBill(
       shopInfo = DEFAULT_SHOP_INFO;
     }
   }
-  const html = buildBillHtml(bill, size, shopInfo);
+  const html = buildBillHtml(bill, size, shopInfo, previousOutstanding);
   await window.api.print.html({
     html,
     size,

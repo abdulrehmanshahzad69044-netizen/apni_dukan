@@ -1,0 +1,1 @@
+ALTER TABLE `bills` ADD `previous_due` integer DEFAULT 0 NOT NULL;

@@ -42,7 +42,9 @@ function toBillDto(row: {
   customerName: string | null;
   billDate: Date;
   totalAmount: number;
+  previousDue: number;
   paidAmount: number;
+  amountReceived: number;
   remainingAmount: number;
   cogs: number;
   status: string;
@@ -58,7 +60,9 @@ function toBillDto(row: {
     customerName: row.customerName,
     billDate: Math.floor(row.billDate.getTime() / 1000),
     totalAmount: row.totalAmount,
+    previousDue: row.previousDue,
     paidAmount: row.paidAmount,
+    amountReceived: row.amountReceived,
     remainingAmount: row.remainingAmount,
     cogs: row.cogs,
     grossProfit: row.totalAmount - row.cogs,
@@ -70,9 +74,6 @@ function toBillDto(row: {
   };
 }
 
-/**
- * Compute total from lines (paisa). Used for both draft + finalize.
- */
 function computeTotal(
   lines: { quantity: number; unitPrice: number }[]
 ): number {
@@ -88,11 +89,11 @@ export const billService = {
   /**
    * Create a bill.
    *
-   * - If status is "finalized": run full FIFO consumption, update batches,
-   *   write ledger, update customer balance.
-   * - If status is "draft" or "held": skip all business-side effects. Just
-   *   save the header + items (so we can reload + edit later). No stock change,
-   *   no Khaata.
+   * previousDue is computed ON THE BACKEND from customers.cachedOutstanding
+   * to guarantee accuracy. The frontend does not send it.
+   *
+   * Customer's outstanding changes by (totalAmount − paidAmount):
+   *   newOutstanding = oldOutstanding + (totalAmount − paidAmount)
    */
   async create(input: CreateBillInput): Promise<BillDetail> {
     const db = getDb();
@@ -100,10 +101,29 @@ export const billService = {
     const billDate = input.billDate ?? new Date();
     const billNumber = await generateBillNumber();
     const paidAmount = input.paidAmount ?? 0;
+    const amountReceived = input.amountReceived ?? paidAmount;
     const status = input.status ?? "finalized";
     const isDraftish = status === "draft" || status === "held";
 
     const billId = db.transaction((tx) => {
+      // Read customer's outstanding INSIDE the transaction — source of truth.
+      let previousDue = 0;
+      let customerOutstandingBefore = 0;
+
+      if (!isDraftish && input.customerId) {
+        const [cust] = tx
+          .select({ cachedOutstanding: customers.cachedOutstanding })
+          .from(customers)
+          .where(eq(customers.id, input.customerId))
+          .limit(1)
+          .all();
+
+        if (cust) {
+          customerOutstandingBefore = cust.cachedOutstanding;
+          previousDue = cust.cachedOutstanding;
+        }
+      }
+
       const [bill] = tx
         .insert(bills)
         .values({
@@ -111,7 +131,9 @@ export const billService = {
           customerId: input.customerId ?? null,
           billDate,
           totalAmount,
+          previousDue: isDraftish ? 0 : previousDue,
           paidAmount: isDraftish ? 0 : paidAmount,
+          amountReceived: isDraftish ? 0 : amountReceived,
           remainingAmount: 0,
           cogs: 0,
           status,
@@ -141,7 +163,6 @@ export const billService = {
           .returning({ id: billItems.id })
           .all();
 
-        // Only run FIFO for finalized bills
         if (!isDraftish) {
           const availableBatches = tx
             .select()
@@ -216,6 +237,7 @@ export const billService = {
         }
       }
 
+      // Remaining is what's left owed ON THIS BILL only.
       const remainingAmount = isDraftish ? 0 : totalAmount - paidAmount;
 
       tx.update(bills)
@@ -227,28 +249,17 @@ export const billService = {
         .where(eq(bills.id, bill.id))
         .run();
 
-      // Only update customer balance for finalized bills
-      if (
-        !isDraftish &&
-        input.customerId &&
-        remainingAmount > 0
-      ) {
-        const [cust] = tx
-          .select({ cachedOutstanding: customers.cachedOutstanding })
-          .from(customers)
-          .where(eq(customers.id, input.customerId))
-          .limit(1)
-          .all();
+      // Customer's new outstanding = old + this bill − paid
+      if (!isDraftish && input.customerId) {
+        const delta = totalAmount - paidAmount;
 
-        if (cust) {
-          tx.update(customers)
-            .set({
-              cachedOutstanding: cust.cachedOutstanding + remainingAmount,
-              updatedAt: new Date(),
-            })
-            .where(eq(customers.id, input.customerId))
-            .run();
-        }
+        tx.update(customers)
+          .set({
+            cachedOutstanding: customerOutstandingBefore + delta,
+            updatedAt: new Date(),
+          })
+          .where(eq(customers.id, input.customerId))
+          .run();
       }
 
       return bill.id;
@@ -259,12 +270,6 @@ export const billService = {
     return created;
   },
 
-  /**
-   * Finalize a draft or held bill. Runs the FIFO consumption NOW (using
-   * current stock), then updates balances.
-   *
-   * Throws if the bill is not a draft or held, or if stock is insufficient.
-   */
   async finalize(billId: number): Promise<BillDetail> {
     const db = getDb();
 
@@ -362,6 +367,18 @@ export const billService = {
 
       const remainingAmount = bill.totalAmount - bill.paidAmount;
 
+      // Read current customer outstanding and add delta
+      let customerOutstandingBefore = 0;
+      if (bill.customerId) {
+        const [cust] = tx
+          .select({ cachedOutstanding: customers.cachedOutstanding })
+          .from(customers)
+          .where(eq(customers.id, bill.customerId))
+          .limit(1)
+          .all();
+        if (cust) customerOutstandingBefore = cust.cachedOutstanding;
+      }
+
       tx.update(bills)
         .set({
           status: "finalized",
@@ -372,23 +389,16 @@ export const billService = {
         .where(eq(bills.id, billId))
         .run();
 
-      if (bill.customerId && remainingAmount > 0) {
-        const [cust] = tx
-          .select({ cachedOutstanding: customers.cachedOutstanding })
-          .from(customers)
-          .where(eq(customers.id, bill.customerId))
-          .limit(1)
-          .all();
+      if (bill.customerId) {
+        const delta = bill.totalAmount - bill.paidAmount;
 
-        if (cust) {
-          tx.update(customers)
-            .set({
-              cachedOutstanding: cust.cachedOutstanding + remainingAmount,
-              updatedAt: new Date(),
-            })
-            .where(eq(customers.id, bill.customerId))
-            .run();
-        }
+        tx.update(customers)
+          .set({
+            cachedOutstanding: customerOutstandingBefore + delta,
+            updatedAt: new Date(),
+          })
+          .where(eq(customers.id, bill.customerId))
+          .run();
       }
     });
 
@@ -397,10 +407,6 @@ export const billService = {
     return updated;
   },
 
-  /**
-   * Delete a draft or held bill. Doesn't touch inventory (nothing to
-   * restore). Finalized bills cannot be deleted.
-   */
   async deleteDraft(billId: number): Promise<void> {
     const db = getDb();
     const [bill] = await db
@@ -426,7 +432,9 @@ export const billService = {
         customerName: sql<string | null>`c.name`,
         billDate: bills.billDate,
         totalAmount: bills.totalAmount,
+        previousDue: bills.previousDue,
         paidAmount: bills.paidAmount,
+        amountReceived: bills.amountReceived,
         remainingAmount: bills.remainingAmount,
         cogs: bills.cogs,
         status: bills.status,
@@ -544,7 +552,6 @@ export const billService = {
       );
     }
 
-    // Held bills sort to the top, then by date desc
     const statusOrder = sql`CASE ${bills.status}
       WHEN 'held' THEN 0
       WHEN 'draft' THEN 1
@@ -562,7 +569,9 @@ export const billService = {
         customerName: sql<string | null>`c.name`,
         billDate: bills.billDate,
         totalAmount: bills.totalAmount,
+        previousDue: bills.previousDue,
         paidAmount: bills.paidAmount,
+        amountReceived: bills.amountReceived,
         remainingAmount: bills.remainingAmount,
         cogs: bills.cogs,
         status: bills.status,
@@ -600,10 +609,6 @@ export const billService = {
     return row?.count ?? 0;
   },
 
-    /**
-   * Preview the FIFO cost for a given variant + base-unit quantity.
-   * Does NOT consume stock. Pure read-only.
-   */
   async previewFifoCost(input: {
     variantId: number;
     quantity: number;
@@ -651,7 +656,7 @@ export const billService = {
 
     const avgCostPerBaseUnit =
       input.quantity > 0
-        ? Math.round((totalCost / (input.quantity / 1000)))
+        ? Math.round(totalCost / (input.quantity / 1000))
         : 0;
 
     return {

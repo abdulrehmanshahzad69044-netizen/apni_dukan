@@ -20,7 +20,12 @@ import { PrintBillModal } from "./PrintBillModal";
 import { useBill } from "./hooks";
 import { billApi } from "./api";
 import { toast } from "@/lib/toast";
-import { formatMoney, formatDate, formatQuantity } from "@/lib/format";
+import {
+  formatMoney,
+  formatDate,
+  formatQuantity,
+  formatStockDisplay,
+} from "@/lib/format";
 
 export function BillDetailPage() {
   const { id } = useParams();
@@ -51,9 +56,12 @@ export function BillDetailPage() {
     );
   }
 
-  const hasBalance = data.remainingAmount > 0;
   const isDraftish = data.status === "draft" || data.status === "held";
   const isFinalized = data.status === "finalized";
+
+  const grandTotal = data.totalAmount + data.previousDue;
+  const receivedNow = data.amountReceived || data.paidAmount;
+  const balanceDue = Math.max(0, grandTotal - receivedNow);
 
   async function handleFinalize() {
     if (!data) return;
@@ -126,27 +134,36 @@ export function BillDetailPage() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="rounded-xl border bg-[rgb(var(--card))] p-4">
-            <p className="text-xs text-[rgb(var(--muted-fg))]">Total</p>
-            <p className="text-xl font-semibold mt-1">
-              {formatMoney(data.totalAmount)}
+            <p className="text-xs text-[rgb(var(--muted-fg))]">
+              {data.previousDue > 0 ? "Grand Total" : "Total"}
             </p>
+            <p className="text-xl font-semibold mt-1">
+              {formatMoney(grandTotal)}
+            </p>
+            {data.previousDue > 0 && (
+              <p className="text-xs text-[rgb(var(--muted-fg))] mt-0.5">
+                (Subtotal{" "}
+                {formatMoney(data.totalAmount, { showDecimals: false })} + Prev{" "}
+                {formatMoney(data.previousDue, { showDecimals: false })})
+              </p>
+            )}
           </div>
           <div className="rounded-xl border bg-[rgb(var(--card))] p-4">
             <p className="text-xs text-[rgb(var(--muted-fg))]">Paid</p>
             <p className="text-xl font-semibold mt-1 text-green-600 dark:text-green-400">
-              {formatMoney(data.paidAmount)}
+              {formatMoney(receivedNow)}
             </p>
           </div>
           <div className="rounded-xl border bg-[rgb(var(--card))] p-4">
-            <p className="text-xs text-[rgb(var(--muted-fg))]">Remaining</p>
+            <p className="text-xs text-[rgb(var(--muted-fg))]">Balance Due</p>
             <p
               className={`text-xl font-semibold mt-1 ${
-                hasBalance
+                balanceDue > 0
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-[rgb(var(--fg))]"
               }`}
             >
-              {formatMoney(data.remainingAmount)}
+              {formatMoney(balanceDue)}
             </p>
           </div>
           <div className="rounded-xl border bg-[rgb(var(--card))] p-4">
@@ -244,7 +261,11 @@ export function BillDetailPage() {
                         </div>
                       </td>
                       <td className="text-right px-4 py-3">
-                        {formatQuantity(item.quantity)}
+                        {formatStockDisplay(item.quantity, {
+                          baseUnitShortName: item.baseUnitShortName,
+                          purchaseUnitShortName: item.purchaseUnitShortName,
+                          purchaseUnitFactor: item.purchaseUnitFactor,
+                        })}
                       </td>
                       <td className="text-right px-4 py-3">
                         {formatMoney(item.unitPrice)}
@@ -306,7 +327,7 @@ export function BillDetailPage() {
                   colSpan={isFinalized ? 4 : 2}
                   className="text-right px-4 py-3 font-medium"
                 >
-                  Total
+                  Subtotal
                 </td>
                 {isFinalized && (
                   <td className="text-right px-4 py-3 font-medium text-green-600 dark:text-green-400">
@@ -317,6 +338,56 @@ export function BillDetailPage() {
                   {formatMoney(data.totalAmount)}
                 </td>
               </tr>
+              {data.previousDue > 0 && (
+                <>
+                  <tr>
+                    <td
+                      colSpan={isFinalized ? 5 : 3}
+                      className="text-right px-4 py-1 text-sm text-[rgb(var(--muted-fg))]"
+                    >
+                      Previous Due
+                    </td>
+                    <td className="text-right px-4 py-1 text-sm">
+                      {formatMoney(data.previousDue)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      colSpan={isFinalized ? 5 : 3}
+                      className="text-right px-4 py-2 font-semibold"
+                    >
+                      Grand Total
+                    </td>
+                    <td className="text-right px-4 py-2 font-bold">
+                      {formatMoney(grandTotal)}
+                    </td>
+                  </tr>
+                </>
+              )}
+              <tr>
+                <td
+                  colSpan={isFinalized ? 5 : 3}
+                  className="text-right px-4 py-1 text-sm text-[rgb(var(--muted-fg))]"
+                >
+                  Paid Now
+                </td>
+                <td className="text-right px-4 py-1 text-sm text-green-600 dark:text-green-400">
+                  {formatMoney(receivedNow)}
+                </td>
+              </tr>
+              {balanceDue > 0 && (
+                <tr>
+                  <td
+                    colSpan={isFinalized ? 5 : 3}
+                    className="text-right px-4 py-2 font-semibold"
+                  >
+                    Balance Due
+                  </td>
+                  <td className="text-right px-4 py-2 font-bold text-amber-600 dark:text-amber-400">
+                    {formatMoney(balanceDue)}
+                  </td>
+                </tr>
+              )}
             </tfoot>
           </table>
         </div>
@@ -336,6 +407,7 @@ export function BillDetailPage() {
         open={printOpen}
         onClose={() => setPrintOpen(false)}
         bill={data}
+        previousOutstanding={data.previousDue}
       />
     </>
   );

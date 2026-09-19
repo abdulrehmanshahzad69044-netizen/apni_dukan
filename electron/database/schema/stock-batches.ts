@@ -1,4 +1,4 @@
-import { sqliteTable, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, index } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 import { timestamps, money, quantity } from "./_shared";
 
@@ -9,7 +9,6 @@ export const stockBatches = sqliteTable(
     variantId: integer("variant_id")
       .notNull()
       .references(() => variants.id),
-    // Nullable: positive adjustments create batches without a purchase
     purchaseId: integer("purchase_id").references(() => purchases.id),
 
     purchasePrice: money("purchase_price").notNull(),
@@ -20,6 +19,18 @@ export const stockBatches = sqliteTable(
     remainingQuantity: quantity("remaining_quantity").notNull(),
 
     purchaseDate: integer("purchase_date", { mode: "timestamp" }).notNull(),
+
+    /**
+     * How this batch was created:
+     *   "purchase"  → normal purchase (default)
+     *   "opening"   → opening stock migration
+     *   "adjustment"→ positive adjustment (e.g. return)
+     */
+    source: text("source", {
+      enum: ["purchase", "opening", "adjustment"],
+    })
+      .notNull()
+      .default("purchase"),
 
     ...timestamps,
   },

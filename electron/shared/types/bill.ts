@@ -9,7 +9,12 @@ export type Bill = {
   customerName: string | null;
   billDate: number;
   totalAmount: number;
+  /** Customer's outstanding BEFORE this bill */
+  previousDue: number;
   paidAmount: number;
+  /** Total cash received from customer at bill time (may exceed paidAmount) */
+  amountReceived: number;
+  /** What's still owed ON THIS BILL only */
   remainingAmount: number;
   cogs: number;
   grossProfit: number;
@@ -72,7 +77,10 @@ export type BillLineInput = z.infer<typeof billLineSchema>;
 export const createBillSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
   billDate: z.coerce.date().optional(),
+  previousDue: z.number().int().nonnegative().optional().default(0),
   paidAmount: z.number().int().nonnegative().optional().default(0),
+  /** Raw cash received — may exceed paidAmount */
+  amountReceived: z.number().int().nonnegative().optional().default(0),
   remarks: optionalTrimmedString(500),
   status: z
     .enum(["draft", "held", "finalized"])
@@ -82,6 +90,8 @@ export const createBillSchema = z.object({
 });
 
 export type CreateBillInput = z.infer<typeof createBillSchema>;
+
+// ---------- Query ----------
 
 export const billListQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -99,33 +109,23 @@ export type BillListQuery = z.infer<typeof billListQuerySchema>;
 
 // ---------- FIFO Cost Preview ----------
 
-/**
- * Preview of what FIFO will consume for a given variant + quantity.
- * Used by the Bill Entry page to show the "cost" reference (not printed).
- */
 export type FifoCostPreview = {
-  /** Total base-unit quantity that will be consumed */
-  quantity: number; // milli-units
-  /** Weighted average cost per base unit (paisa) */
+  quantity: number;
   avgCostPerBaseUnit: number;
-  /** Total cost for the requested quantity (paisa) */
   totalCost: number;
-  /** Breakdown of what batches will be consumed (oldest first) */
   batches: Array<{
     batchId: number;
-    purchaseDate: number; // unix seconds
-    quantityConsumed: number; // milli-units
-    unitCost: number; // paisa
+    purchaseDate: number;
+    quantityConsumed: number;
+    unitCost: number;
   }>;
-  /** True if there's not enough stock to fulfill */
   insufficient: boolean;
-  /** Available quantity in base units (milli-units) */
   availableQuantity: number;
 };
 
 export const fifoCostPreviewSchema = z.object({
   variantId: z.number().int().positive(),
-  quantity: z.number().int().positive(), // milli-units, base unit
+  quantity: z.number().int().positive(),
 });
 
 export type FifoCostPreviewInput = z.infer<typeof fifoCostPreviewSchema>;

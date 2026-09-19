@@ -28,10 +28,10 @@ import { useDashboard } from "./hooks";
 import {
   formatMoney,
   formatStockDisplay,
+  formatQuantity,
   formatDate,
   paisaToRupees,
 } from "@/lib/format";
-
 export function DashboardPage() {
   const navigate = useNavigate();
   const { data, loading } = useDashboard();

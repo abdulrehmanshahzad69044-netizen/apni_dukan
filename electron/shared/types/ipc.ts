@@ -88,6 +88,10 @@ import type {
   CustomerUdhaar,
   UdhaarListQuery,
 } from "./udhaar";
+import type {
+  CreateOpeningStockInput,
+  OpeningStockEntry,
+} from "./opening-stock";
 import type { Settings, UpdateSettingsInput } from "./settings";
 
 import type { FullReport, ReportQuery, SalesSummary } from "./report";
@@ -315,6 +319,11 @@ export type AppApi = {
     get: (id: number) => Promise<CustomerUdhaar | null>;
     create: (input: CreateUdhaarInput) => Promise<CustomerUdhaar>;
     delete: (id: number) => Promise<{ ok: true }>;
+  };
+    openingStock: {
+    list: () => Promise<OpeningStockEntry[]>;
+    create: (input: CreateOpeningStockInput) => Promise<OpeningStockEntry[]>;
+    delete: (batchId: number) => Promise<{ ok: true }>;
   };
 };
 

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export type Settings = {
   shopName: string;
+  shopNameUrdu: string;
+
   shopAddress: string;
   shopPhone: string;
   taxNumber: string;
@@ -12,7 +14,9 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  shopName: "Apni Dukan",
+  shopName: "Sheikh Mushtaq General Store",
+  shopNameUrdu: "",
+
   shopAddress: "",
   shopPhone: "",
   taxNumber: "",
@@ -32,6 +36,7 @@ const optionalTrimmedString = (max: number) =>
 
 export const updateSettingsSchema = z.object({
   shopName: z.string().trim().min(1, "Shop name is required").max(120),
+  shopNameUrdu: optionalTrimmedString(120),
   shopAddress: optionalTrimmedString(300),
   shopPhone: optionalTrimmedString(30),
   taxNumber: optionalTrimmedString(30),

@@ -11,7 +11,14 @@ export const bills = sqliteTable(
     billDate: integer("bill_date", { mode: "timestamp" }).notNull(),
 
     totalAmount: money("total_amount").notNull(),
-    paidAmount: money("paid_amount").notNull().default(0),
+    /** Customer's outstanding BEFORE this bill was created (for display only) */
+    previousDue: money("previous_due").notNull().default(0),
+        paidAmount: money("paid_amount").notNull().default(0),
+    /**
+     * Amount physically received from customer at bill time.
+     * May exceed paidAmount if the excess was applied to previous dues.
+     */
+    amountReceived: money("amount_received").notNull().default(0),
     remainingAmount: money("remaining_amount").notNull().default(0),
     cogs: money("cogs").notNull().default(0),
 
