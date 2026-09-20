@@ -174,7 +174,7 @@ export type AppApi = {
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };
-    variant: {
+      variant: {
     list: (query?: Partial<VariantListQuery>) => Promise<Variant[]>;
     count: (
       query?: Pick<VariantListQuery, "search" | "includeDeleted" | "productId">

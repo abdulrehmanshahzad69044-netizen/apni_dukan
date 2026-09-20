@@ -23,6 +23,11 @@ export const variants = sqliteTable(
     /** Pinned items sort to the top of lists and search results */
     pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
 
+    /** Quick items are auto-created from the billing screen */
+    isQuickItem: integer("is_quick_item", { mode: "boolean" })
+      .notNull()
+      .default(false),
+
     ...timestamps,
     ...softDelete,
   },
@@ -32,6 +37,7 @@ export const variants = sqliteTable(
     purchaseUnitIdx: index("variants_purchase_unit_idx").on(t.purchaseUnitId),
     nameIdx: index("variants_name_idx").on(t.name),
     pinnedIdx: index("variants_pinned_idx").on(t.pinned),
+    quickItemIdx: index("variants_quick_item_idx").on(t.isQuickItem),
   })
 );
 

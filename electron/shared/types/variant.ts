@@ -19,7 +19,9 @@ export type Variant = {
   lowStockThreshold: number | null;
 
   /** Pinned items sort to the top */
-  pinned: boolean;
+  pinned: boolean;  
+isQuickItem: boolean;
+
 
   createdAt: number;
   updatedAt: number;
@@ -77,6 +79,24 @@ export const createVariantSchema = z
       "Both purchase unit and conversion factor are required, or leave both empty",
     path: ["purchaseUnitFactor"],
   });
+
+  // ---------- Quick Item ----------
+
+export const createQuickItemSchema = z.object({
+  /** The name the user typed in the search */
+  name: z.string().trim().min(1, "Name is required").max(80),
+  /** Selling price per base unit (paisa) */
+  price: z.number().int().nonnegative(),
+  /** Purchase cost per base unit (paisa) */
+  cost: z.number().int().nonnegative(),
+  /** Quantity to add to inventory (milli-units) */
+  quantity: z.number().int().positive(),
+  /** Optional retail/wholesale prices to seed the batch */
+  suggestedRetailPrice: z.number().int().nonnegative().nullable().optional(),
+  suggestedWholesalePrice: z.number().int().nonnegative().nullable().optional(),
+});
+
+export type CreateQuickItemInput = z.infer<typeof createQuickItemSchema>;
 
 export const updateVariantSchema = z
   .object({

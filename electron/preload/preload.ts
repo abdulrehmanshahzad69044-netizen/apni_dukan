@@ -51,16 +51,19 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("product:delete", id),
     restore: (id) => ipcRenderer.invoke("product:restore", id),
   },
-    variant: {
+      variant: {
     list: (query) => ipcRenderer.invoke("variant:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("variant:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("variant:get", id),
     create: (input) => ipcRenderer.invoke("variant:create", input),
+    createQuick: (input) => ipcRenderer.invoke("variant:createQuick", input),
     update: (input) => ipcRenderer.invoke("variant:update", input),
     delete: (id) => ipcRenderer.invoke("variant:delete", id),
     restore: (id) => ipcRenderer.invoke("variant:restore", id),
     setPinned: (payload) =>
       ipcRenderer.invoke("variant:setPinned", payload),
+    promoteFromQuick: (id) =>
+      ipcRenderer.invoke("variant:promoteFromQuick", id),
   },
   purchase: {
     list: (query) => ipcRenderer.invoke("purchase:list", query ?? {}),

@@ -1,4 +1,5 @@
 import type {
+  CreateQuickItemInput,
   CreateVariantInput,
   UpdateVariantInput,
   Variant,
@@ -28,6 +29,10 @@ export const variantApi = {
     return window.api.variant.create(input);
   },
 
+  async createQuick(input: CreateQuickItemInput): Promise<Variant> {
+    return window.api.variant.createQuick(input);
+  },
+
   async update(input: UpdateVariantInput): Promise<Variant> {
     return window.api.variant.update(input);
   },
@@ -40,7 +45,11 @@ export const variantApi = {
     await window.api.variant.restore(id);
   },
 
-    async setPinned(id: number, pinned: boolean): Promise<Variant> {
+  async setPinned(id: number, pinned: boolean): Promise<Variant> {
     return window.api.variant.setPinned({ id, pinned });
+  },
+
+  async promoteFromQuick(id: number): Promise<Variant> {
+    return window.api.variant.promoteFromQuick(id);
   },
 };

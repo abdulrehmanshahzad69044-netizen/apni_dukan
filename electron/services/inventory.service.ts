@@ -26,6 +26,8 @@ export const inventoryService = {
           pu.short_name                             AS purchaseUnitShortName,
           v.low_stock_threshold                     AS lowStockThreshold,
                     v.pinned                                  AS pinned,
+                              v.is_quick_item                           AS isQuickItem,
+
           SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
           COUNT(*)                                  AS activeBatchCount,
@@ -55,6 +57,7 @@ export const inventoryService = {
       purchaseUnitFactor: number | null;
       lowStockThreshold: number | null;
             pinned: number | boolean;
+                  isQuickItem: number | boolean;
       currentStock: number;
       valueMilliPaisa: number;
       activeBatchCount: number;

@@ -55,10 +55,12 @@ const api = {
     count: (query) => electron.ipcRenderer.invoke("variant:count", query ?? {}),
     get: (id) => electron.ipcRenderer.invoke("variant:get", id),
     create: (input) => electron.ipcRenderer.invoke("variant:create", input),
+    createQuick: (input) => electron.ipcRenderer.invoke("variant:createQuick", input),
     update: (input) => electron.ipcRenderer.invoke("variant:update", input),
     delete: (id) => electron.ipcRenderer.invoke("variant:delete", id),
     restore: (id) => electron.ipcRenderer.invoke("variant:restore", id),
-    setPinned: (payload) => electron.ipcRenderer.invoke("variant:setPinned", payload)
+    setPinned: (payload) => electron.ipcRenderer.invoke("variant:setPinned", payload),
+    promoteFromQuick: (id) => electron.ipcRenderer.invoke("variant:promoteFromQuick", id)
   },
   purchase: {
     list: (query) => electron.ipcRenderer.invoke("purchase:list", query ?? {}),

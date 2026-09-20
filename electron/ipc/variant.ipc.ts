@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 import { variantService } from "../services/variant.service";
 import {
+  createQuickItemSchema,
   createVariantSchema,
   updateVariantSchema,
   variantListQuerySchema,
@@ -28,6 +29,11 @@ export function registerVariantIpc() {
     return variantService.create(input);
   });
 
+  ipcMain.handle("variant:createQuick", async (_e, rawInput: unknown) => {
+    const input = createQuickItemSchema.parse(rawInput);
+    return variantService.createQuick(input);
+  });
+
   ipcMain.handle("variant:update", async (_e, rawInput: unknown) => {
     const input = updateVariantSchema.parse(rawInput);
     return variantService.update(input);
@@ -49,4 +55,8 @@ export function registerVariantIpc() {
       return variantService.setPinned(payload.id, payload.pinned);
     }
   );
+
+  ipcMain.handle("variant:promoteFromQuick", async (_e, id: number) => {
+    return variantService.promoteFromQuick(id);
+  });
 }

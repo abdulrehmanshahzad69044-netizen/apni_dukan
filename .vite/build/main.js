@@ -5450,6 +5450,8 @@ const variants = sqliteTable(
     lowStockThreshold: quantity("low_stock_threshold"),
     /** Pinned items sort to the top of lists and search results */
     pinned: integer$1("pinned", { mode: "boolean" }).notNull().default(false),
+    /** Quick items are auto-created from the billing screen */
+    isQuickItem: integer$1("is_quick_item", { mode: "boolean" }).notNull().default(false),
     ...timestamps,
     ...softDelete
   },
@@ -5458,7 +5460,8 @@ const variants = sqliteTable(
     unitIdx: index("variants_unit_idx").on(t.baseUnitId),
     purchaseUnitIdx: index("variants_purchase_unit_idx").on(t.purchaseUnitId),
     nameIdx: index("variants_name_idx").on(t.name),
-    pinnedIdx: index("variants_pinned_idx").on(t.pinned)
+    pinnedIdx: index("variants_pinned_idx").on(t.pinned),
+    quickItemIdx: index("variants_quick_item_idx").on(t.isQuickItem)
   })
 );
 const variantsRelations = relations(variants, ({ one }) => ({
@@ -11186,6 +11189,7 @@ function toDto$4(row) {
     purchaseUnitFactor: row.purchaseUnitFactor,
     lowStockThreshold: row.lowStockThreshold,
     pinned: Boolean(row.pinned),
+    isQuickItem: Boolean(row.isQuickItem),
     createdAt: Math.floor(row.createdAt.getTime() / 1e3),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1e3),
     deletedAt: row.deletedAt ? Math.floor(row.deletedAt.getTime() / 1e3) : null
@@ -11200,6 +11204,7 @@ const variantSelect = {
   purchaseUnitFactor: variants.purchaseUnitFactor,
   lowStockThreshold: variants.lowStockThreshold,
   pinned: variants.pinned,
+  isQuickItem: variants.isQuickItem,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
   deletedAt: variants.deletedAt,
@@ -11228,7 +11233,6 @@ const variantService = {
     }
     const rows = await baseJoin(db.select(variantSelect)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(
       desc(variants.pinned),
-      // pinned first
       asc(variants.productId),
       asc(variants.name)
     ).limit(query.limit).offset(query.offset);
@@ -11247,10 +11251,83 @@ const variantService = {
       baseUnitId: input.baseUnitId,
       purchaseUnitId: input.purchaseUnitId ?? null,
       purchaseUnitFactor: input.purchaseUnitFactor ?? null,
-      lowStockThreshold: input.lowStockThreshold ?? null
+      lowStockThreshold: input.lowStockThreshold ?? null,
+      isQuickItem: false
     }).returning({ id: variants.id });
     const created = await this.getById(inserted.id);
     if (!created) throw new Error("Failed to load created variant");
+    return created;
+  },
+  /**
+   * Create a quick item from the bill entry screen.
+   * Creates (in one transaction):
+   *   - "Quick Items" category if missing
+   *   - "Piece" unit if missing
+   *   - Product
+   *   - Variant (marked as quick, pinned)
+   *   - First stock batch
+   *   - Stock ledger entry
+   */
+  async createQuick(input) {
+    const db = getDb();
+    const now = /* @__PURE__ */ new Date();
+    const variantId = db.transaction((tx) => {
+      const existingCats = tx.select({ id: categories.id }).from(categories).where(eq(categories.name, "Quick Items")).limit(1).all();
+      let categoryId;
+      if (existingCats[0]) {
+        categoryId = existingCats[0].id;
+      } else {
+        const [created2] = tx.insert(categories).values({ name: "Quick Items" }).returning({ id: categories.id }).all();
+        categoryId = created2.id;
+      }
+      const existingUnits = tx.select({ id: units.id }).from(units).where(and(eq(units.name, "Piece"), isNull(units.deletedAt))).limit(1).all();
+      let pieceUnitId;
+      if (existingUnits[0]) {
+        pieceUnitId = existingUnits[0].id;
+      } else {
+        const [created2] = tx.insert(units).values({ name: "Piece", shortName: "pc" }).returning({ id: units.id }).all();
+        pieceUnitId = created2.id;
+      }
+      const [product] = tx.insert(products).values({
+        name: input.name,
+        categoryId,
+        companyId: null
+      }).returning({ id: products.id }).all();
+      const [variant] = tx.insert(variants).values({
+        productId: product.id,
+        name: "Standard",
+        baseUnitId: pieceUnitId,
+        purchaseUnitId: null,
+        purchaseUnitFactor: null,
+        lowStockThreshold: null,
+        pinned: true,
+        isQuickItem: true
+      }).returning({ id: variants.id }).all();
+      const [batch] = tx.insert(stockBatches).values({
+        variantId: variant.id,
+        purchaseId: null,
+        purchasePrice: input.cost,
+        suggestedRetailPrice: input.suggestedRetailPrice ?? input.price,
+        suggestedWholesalePrice: input.suggestedWholesalePrice ?? input.price,
+        quantityPurchased: input.quantity,
+        remainingQuantity: input.quantity,
+        purchaseDate: now,
+        source: "adjustment"
+      }).returning({ id: stockBatches.id }).all();
+      tx.insert(stockLedger).values({
+        batchId: batch.id,
+        variantId: variant.id,
+        quantityChange: input.quantity,
+        unitCost: input.cost,
+        movementType: "purchase",
+        referenceType: null,
+        referenceId: null,
+        notes: "Quick item initial stock"
+      }).run();
+      return variant.id;
+    });
+    const created = await this.getById(variantId);
+    if (!created) throw new Error("Failed to load created quick variant");
     return created;
   },
   async update(input) {
@@ -11270,12 +11347,16 @@ const variantService = {
     if (!updated) throw new Error(`Variant ${input.id} not found`);
     return updated;
   },
-  /**
-   * Toggle pin state on a variant.
-   */
   async setPinned(id, pinned) {
     const db = getDb();
     await db.update(variants).set({ pinned, updatedAt: /* @__PURE__ */ new Date() }).where(eq(variants.id, id));
+    const updated = await this.getById(id);
+    if (!updated) throw new Error(`Variant ${id} not found`);
+    return updated;
+  },
+  async promoteFromQuick(id) {
+    const db = getDb();
+    await db.update(variants).set({ isQuickItem: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq(variants.id, id));
     const updated = await this.getById(id);
     if (!updated) throw new Error(`Variant ${id} not found`);
     return updated;
@@ -11322,6 +11403,19 @@ const createVariantSchema = object({
   message: "Both purchase unit and conversion factor are required, or leave both empty",
   path: ["purchaseUnitFactor"]
 });
+const createQuickItemSchema = object({
+  /** The name the user typed in the search */
+  name: string().trim().min(1, "Name is required").max(80),
+  /** Selling price per base unit (paisa) */
+  price: number().int().nonnegative(),
+  /** Purchase cost per base unit (paisa) */
+  cost: number().int().nonnegative(),
+  /** Quantity to add to inventory (milli-units) */
+  quantity: number().int().positive(),
+  /** Optional retail/wholesale prices to seed the batch */
+  suggestedRetailPrice: number().int().nonnegative().nullable().optional(),
+  suggestedWholesalePrice: number().int().nonnegative().nullable().optional()
+});
 const updateVariantSchema = object({
   id: number().int().positive(),
   name: string().trim().min(1).max(80).optional(),
@@ -11356,6 +11450,10 @@ function registerVariantIpc() {
     const input = createVariantSchema.parse(rawInput);
     return variantService.create(input);
   });
+  require$$3$1.ipcMain.handle("variant:createQuick", async (_e, rawInput) => {
+    const input = createQuickItemSchema.parse(rawInput);
+    return variantService.createQuick(input);
+  });
   require$$3$1.ipcMain.handle("variant:update", async (_e, rawInput) => {
     const input = updateVariantSchema.parse(rawInput);
     return variantService.update(input);
@@ -11374,6 +11472,9 @@ function registerVariantIpc() {
       return variantService.setPinned(payload.id, payload.pinned);
     }
   );
+  require$$3$1.ipcMain.handle("variant:promoteFromQuick", async (_e, id) => {
+    return variantService.promoteFromQuick(id);
+  });
 }
 function toPurchaseDto(row) {
   return {
@@ -11633,6 +11734,8 @@ const inventoryService = {
           pu.short_name                             AS purchaseUnitShortName,
           v.low_stock_threshold                     AS lowStockThreshold,
                     v.pinned                                  AS pinned,
+                              v.is_quick_item                           AS isQuickItem,
+
           SUM(b.remaining_quantity)                 AS currentStock,
           SUM(b.remaining_quantity * b.purchase_price) AS valueMilliPaisa,
           COUNT(*)                                  AS activeBatchCount,

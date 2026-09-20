@@ -11,6 +11,7 @@ import {
   FileEdit,
   PauseCircle,
   Info,
+  Zap,
 } from "lucide-react";
 import { Page } from "@/components/ui/Page";
 import { Button } from "@/components/ui/Button";
@@ -34,7 +35,9 @@ import {
 } from "@/lib/units";
 import { billApi } from "./api";
 import { paymentApi } from "../payments/api";
+import { variantApi } from "../variants/api";
 import { PriceModeToggle, type PriceMode } from "./PriceModeToggle";
+import { QuickItemModal } from "./QuickItemModal";
 import { CustomerPicker } from "@/components/ui/CustomerPicker";
 import { useCustomers } from "../customers/hooks";
 import { useVariants } from "../variants/hooks";
@@ -43,6 +46,7 @@ import { QuickAddCustomerModal } from "./QuickAddCustomerModal";
 import type { Variant } from "../../../electron/shared/types/variant";
 import type { Customer } from "../../../electron/shared/types/customer";
 import type { StockItem } from "../../../electron/shared/types/inventory";
+import type { CreateQuickItemInput } from "../../../electron/shared/types/variant";
 
 type LineItem = {
   key: string;
@@ -64,6 +68,7 @@ type LineItem = {
   latestWholesalePricePaisa: number | null;
   availableStock: number;
   avgCostPaisa: number;
+  isQuickItem: boolean;
 };
 
 type BillStatus = "finalized" | "draft" | "held";
@@ -93,11 +98,14 @@ export function BillEntryPage() {
   const [saving, setSaving] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
+  const [quickItemOpen, setQuickItemOpen] = useState(false);
+  const [quickItemName, setQuickItemName] = useState("");
+
   const { data: customers, reload: reloadCustomers } = useCustomers();
-  const { data: variants } = useVariants({
+  const { data: variants, reload: reloadVariants } = useVariants({
     search: variantSearch.trim() || undefined,
   });
-  const { data: stock } = useStock({ filter: "in" });
+  const { data: stock, reload: reloadStock } = useStock({ filter: "in" });
 
   const stockByVariant = useMemo(() => {
     const m = new Map<number, StockItem>();
@@ -128,15 +136,16 @@ export function BillEntryPage() {
 
   const remainingAfter = Math.max(0, totalRecoverable - paidPaisa);
 
-  function addVariant(v: Variant) {
-    if (lines.some((l) => l.variantId === v.id)) {
-      toast.error(`${v.productName} — ${v.name} is already in the bill`);
-      return;
-    }
+  function addVariantToLines(v: Variant, overridePrice?: number) {
     const stockItem = stockByVariant.get(v.id);
     const retail = stockItem?.latestRetailPrice ?? null;
     const wholesale = stockItem?.latestWholesalePrice ?? null;
-    const defaultPrice = retail !== null ? String(retail / 100) : "0";
+    const defaultPrice =
+      overridePrice !== undefined
+        ? String(overridePrice)
+        : retail !== null
+        ? String(retail / 100)
+        : "0";
 
     setLines((prev) => [
       ...prev,
@@ -160,9 +169,41 @@ export function BillEntryPage() {
         latestWholesalePricePaisa: wholesale,
         availableStock: stockItem?.currentStock ?? 0,
         avgCostPaisa: stockItem?.avgCost ?? 0,
+        isQuickItem: v.isQuickItem,
       },
     ]);
     setVariantSearch("");
+  }
+
+  function addVariant(v: Variant) {
+    if (lines.some((l) => l.variantId === v.id)) {
+      toast.error(`${v.productName} — ${v.name} is already in the bill`);
+      return;
+    }
+    addVariantToLines(v);
+  }
+
+  function openQuickItem(name: string) {
+    setQuickItemName(name);
+    setQuickItemOpen(true);
+  }
+
+  async function handleQuickItemConfirm(input: CreateQuickItemInput) {
+    const created = await variantApi.createQuick(input);
+    // Refresh variants + stock before adding to the bill
+    await reloadVariants();
+    await reloadStock();
+
+    // Add to lines with the price the user entered
+    const unitPricePaisa = input.price;
+    // Note: stock refresh is async; we pass the price directly
+    const placeholder: Variant = created;
+    addVariantToLines(placeholder, unitPricePaisa / 100);
+
+    // Also make sure the stock info is updated for the newly added variant
+    // (it will be when the search dropdown next refreshes)
+
+    toast.success(`"${created.productName}" added as quick item`);
   }
 
   function updateLine(key: string, patch: Partial<LineItem>) {
@@ -261,8 +302,6 @@ export function BillEntryPage() {
 
     setSaving(true);
     try {
-      // Cap the paid amount on the bill at the bill's own subtotal.
-      // Any excess goes to previous dues via the FIFO payment engine.
       const paidForThisBill =
         status === "finalized" ? Math.min(paidPaisa, billTotal) : 0;
       const excess = status === "finalized" ? paidPaisa - paidForThisBill : 0;
@@ -270,7 +309,6 @@ export function BillEntryPage() {
       const created = await billApi.create({
         customerId: customerId === "" ? null : Number(customerId),
         billDate: new Date(billDate),
-        // previousDue is computed on the backend — don't send it
         paidAmount: paidForThisBill,
         amountReceived: status === "finalized" ? paidPaisa : 0,
         remarks: remarks.trim(),
@@ -298,8 +336,6 @@ export function BillEntryPage() {
         }),
       });
 
-      // If the customer paid extra beyond this bill, apply it via FIFO
-      // to their previous unpaid bills.
       if (excess > 0 && customerId !== "") {
         try {
           await paymentApi.create({
@@ -425,61 +461,89 @@ export function BillEntryPage() {
 
           {variantSearch.trim() && (
             <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border bg-[rgb(var(--bg))]">
-              {variants.length === 0 ? (
-                <p className="p-3 text-sm text-[rgb(var(--muted-fg))]">
-                  No variants match
-                </p>
-              ) : (
-                variants.map((v) => {
-                  const s = stockByVariant.get(v.id);
-                  const available = s?.currentStock ?? 0;
-                  const out = available <= 0;
-                  const retail = s?.latestRetailPrice ?? null;
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={() => addVariant(v)}
-                      disabled={out}
-                      className={`w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b last:border-b-0 ${
-                        out
-                          ? "opacity-50 cursor-not-allowed"
-                          : "hover:bg-[rgb(var(--muted))]"
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate">
+              {variants.length === 0 && (
+                <>
+                  <p className="p-3 text-sm text-[rgb(var(--muted-fg))]">
+                    No variants match "{variantSearch}"
+                  </p>
+                  <button
+                    onClick={() => openQuickItem(variantSearch.trim())}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left border-t bg-blue-500/5 hover:bg-blue-500/10"
+                  >
+                    <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-blue-700 dark:text-blue-400">
+                        Add "{variantSearch.trim()}" as quick item
+                      </div>
+                      <div className="text-xs text-blue-600/70 dark:text-blue-400/70">
+                        Create a new product on the fly
+                      </div>
+                    </div>
+                    <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  </button>
+                </>
+              )}
+
+              {variants.map((v) => {
+                const s = stockByVariant.get(v.id);
+                const available = s?.currentStock ?? 0;
+                const out = available <= 0;
+                const retail = s?.latestRetailPrice ?? null;
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => addVariant(v)}
+                    disabled={out}
+                    className={`w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b last:border-b-0 ${
+                      out
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:bg-[rgb(var(--muted))]"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">
                           {v.productName}
-                        </div>
-                        <div className="text-xs text-[rgb(var(--muted-fg))]">
-                          {v.name} · {v.baseUnitShortName}
-                        </div>
+                        </span>
+                        {v.isQuickItem && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-blue-400">
+                            <Zap className="w-2.5 h-2.5" />
+                            Quick
+                          </span>
+                        )}
                       </div>
-                      <div className="text-right shrink-0 mr-2">
-                        <div className="text-xs text-[rgb(var(--muted-fg))]">
-                          Stock
-                        </div>
-                        <div
-                          className={`text-sm font-medium ${
-                            out ? "text-red-600 dark:text-red-400" : ""
-                          }`}
-                        >
-                          {formatQuantity(available)}
-                        </div>
+                      <div className="text-xs text-[rgb(var(--muted-fg))]">
+                        {v.name} · {v.baseUnitShortName}
                       </div>
-                      <div className="text-right shrink-0 mr-2">
-                        <div className="text-xs text-[rgb(var(--muted-fg))]">
-                          Retail
-                        </div>
-                        <div className="text-sm font-medium">
-                          {retail !== null
-                            ? formatMoney(retail, { showDecimals: false })
-                            : "—"}
-                        </div>
+                    </div>
+                    <div className="text-right shrink-0 mr-2">
+                      <div className="text-xs text-[rgb(var(--muted-fg))]">
+                        Stock
                       </div>
-                      <Plus className="w-4 h-4 text-[rgb(var(--muted-fg))] shrink-0" />
-                    </button>
-                  );
-                })
+                      <div
+                        className={`text-sm font-medium ${
+                          out ? "text-red-600 dark:text-red-400" : ""
+                        }`}
+                      >
+                        {formatQuantity(available)}
+                      </div>
+                    </div>
+                    <Plus className="w-4 h-4 text-[rgb(var(--muted-fg))] shrink-0" />
+                  </button>
+                );
+              })}
+
+              {variants.length > 0 && (
+                <button
+                  onClick={() => openQuickItem(variantSearch.trim())}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-left border-t bg-blue-500/5 hover:bg-blue-500/10"
+                >
+                  <Zap className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <div className="min-w-0 flex-1 text-xs text-blue-700 dark:text-blue-400">
+                    Add "{variantSearch.trim()}" as quick item
+                  </div>
+                  <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                </button>
               )}
             </div>
           )}
@@ -521,15 +585,23 @@ export function BillEntryPage() {
               return (
                 <div
                   key={l.key}
-                  className={`rounded-xl border bg-[rgb(var(--card))] p-4 ${
+                  className={`rounded-xl border bg-[rgb(var(--card))] p-4 transition-all ${
                     exceedsStock ? "border-red-500/50" : ""
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="min-w-0">
-                      <h4 className="font-medium truncate">
-                        {l.productName}
-                      </h4>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-medium truncate">
+                          {l.productName}
+                        </h4>
+                        {l.isQuickItem && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-blue-400">
+                            <Zap className="w-2.5 h-2.5" />
+                            Quick
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-[rgb(var(--muted-fg))]">
                         {l.variantName} · Available:{" "}
                         {formatStockDisplay(l.availableStock, {
@@ -621,7 +693,6 @@ export function BillEntryPage() {
                     </div>
                   )}
 
-                  {/* COST — internal only, never printed */}
                   <div className="mt-2 flex items-center gap-2 text-xs text-[rgb(var(--muted-fg))]">
                     <Info className="w-3 h-3 shrink-0" />
                     <span>
@@ -763,6 +834,13 @@ export function BillEntryPage() {
         open={quickAddOpen}
         onClose={() => setQuickAddOpen(false)}
         onCreated={onCustomerCreated}
+      />
+
+      <QuickItemModal
+        open={quickItemOpen}
+        onClose={() => setQuickItemOpen(false)}
+        initialName={quickItemName}
+        onConfirm={handleQuickItemConfirm}
       />
     </>
   );
