@@ -4,6 +4,7 @@ import {
   createProductSchema,
   productListQuerySchema,
   updateProductSchema,
+  createFullProductSchema,
 } from "../shared/types/product";
 
 export function registerProductIpc() {
@@ -36,6 +37,10 @@ export function registerProductIpc() {
   ipcMain.handle("product:update", async (_e, rawInput: unknown) => {
     const input = updateProductSchema.parse(rawInput);
     return productService.update(input);
+  });
+    ipcMain.handle("product:createFull", async (_e, rawInput: unknown) => {
+    const input = createFullProductSchema.parse(rawInput);
+    return productService.createFull(input);
   });
 
   ipcMain.handle("product:delete", async (_e, id: number) => {

@@ -11092,6 +11092,55 @@ const productService = {
     if (!created) throw new Error("Failed to load created product");
     return created;
   },
+  /**
+  * Create a product + variant + opening stock batch in ONE transaction.
+  * Used by the "Add Full Product" screen.
+  */
+  async createFull(input) {
+    const db = getDb();
+    const now = /* @__PURE__ */ new Date();
+    const productId = db.transaction((tx) => {
+      const [product] = tx.insert(products).values({
+        name: input.productName,
+        categoryId: input.categoryId ?? null,
+        companyId: input.companyId ?? null
+      }).returning({ id: products.id }).all();
+      const [variant] = tx.insert(variants).values({
+        productId: product.id,
+        name: input.variantName,
+        baseUnitId: input.baseUnitId,
+        purchaseUnitId: input.purchaseUnitId ?? null,
+        purchaseUnitFactor: input.purchaseUnitFactor ?? null,
+        lowStockThreshold: input.lowStockThreshold ?? null,
+        isQuickItem: false
+      }).returning({ id: variants.id }).all();
+      const [batch] = tx.insert(stockBatches).values({
+        variantId: variant.id,
+        purchaseId: null,
+        purchasePrice: input.openingCost,
+        suggestedRetailPrice: input.suggestedRetailPrice ?? null,
+        suggestedWholesalePrice: input.suggestedWholesalePrice ?? null,
+        quantityPurchased: input.openingQuantity,
+        remainingQuantity: input.openingQuantity,
+        purchaseDate: now,
+        source: "opening"
+      }).returning({ id: stockBatches.id }).all();
+      tx.insert(stockLedger).values({
+        batchId: batch.id,
+        variantId: variant.id,
+        quantityChange: input.openingQuantity,
+        unitCost: input.openingCost,
+        movementType: "purchase",
+        referenceType: null,
+        referenceId: null,
+        notes: "Opening stock from full product setup"
+      }).run();
+      return product.id;
+    });
+    const created = await this.getById(productId);
+    if (!created) throw new Error("Failed to load created product");
+    return created;
+  },
   async update(input) {
     const db = getDb();
     const updateValues = { updatedAt: /* @__PURE__ */ new Date() };
@@ -11140,6 +11189,23 @@ const productListQuerySchema = object({
   limit: number().int().positive().max(500).optional().default(100),
   offset: number().int().nonnegative().optional().default(0)
 });
+const createFullProductSchema = object({
+  // Product
+  productName: string().trim().min(1, "Product name is required").max(150),
+  categoryId: number().int().positive().nullable().optional(),
+  companyId: number().int().positive().nullable().optional(),
+  // Variant
+  variantName: string().trim().min(1, "Variant name is required").max(80),
+  baseUnitId: number().int().positive(),
+  purchaseUnitId: number().int().positive().nullable().optional(),
+  purchaseUnitFactor: number().int().positive().max(1e5).nullable().optional(),
+  lowStockThreshold: number().int().nonnegative().nullable().optional(),
+  // Opening stock
+  openingQuantity: number().int().positive("Quantity must be positive"),
+  openingCost: number().int().nonnegative("Cost must be non-negative"),
+  suggestedRetailPrice: number().int().nonnegative().nullable().optional(),
+  suggestedWholesalePrice: number().int().nonnegative().nullable().optional()
+});
 function registerProductIpc() {
   require$$3$1.ipcMain.handle("product:list", async (_e, rawQuery) => {
     const query = productListQuerySchema.parse(rawQuery ?? {});
@@ -11164,6 +11230,10 @@ function registerProductIpc() {
   require$$3$1.ipcMain.handle("product:update", async (_e, rawInput) => {
     const input = updateProductSchema.parse(rawInput);
     return productService.update(input);
+  });
+  require$$3$1.ipcMain.handle("product:createFull", async (_e, rawInput) => {
+    const input = createFullProductSchema.parse(rawInput);
+    return productService.createFull(input);
   });
   require$$3$1.ipcMain.handle("product:delete", async (_e, id) => {
     await productService.softDelete(id);

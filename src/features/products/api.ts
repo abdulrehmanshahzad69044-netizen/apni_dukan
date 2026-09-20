@@ -1,4 +1,5 @@
 import type {
+  CreateFullProductInput,
   CreateProductInput,
   Product,
   ProductListQuery,
@@ -34,7 +35,9 @@ export const productApi = {
   async update(input: UpdateProductInput): Promise<Product> {
     return window.api.product.update(input);
   },
-
+  async createFull(input: CreateFullProductInput): Promise<Product> {
+    return window.api.product.createFull(input);
+  },
   async remove(id: number): Promise<void> {
     await window.api.product.delete(id);
   },

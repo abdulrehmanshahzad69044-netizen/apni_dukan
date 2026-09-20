@@ -24,6 +24,7 @@ import { ReportsPage } from "@/features/reports/ReportsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { OpeningStockPage } from "@/features/opening-stock/OpeningStockPage";
 import { ComingSoonPage } from "@/features/_placeholders/ComingSoonPage";
+import { FullProductPage } from "@/features/products/FullProductPage";
 
 export function AppRouter() {
   return (
@@ -41,6 +42,8 @@ export function AppRouter() {
         <Route path="units" element={<UnitsPage />} />
         <Route path="products" element={<ProductsPage />} />
         <Route path="variants" element={<VariantsPage />} />
+
+        <Route path="products/new-full" element={<FullProductPage />} />
 
         <Route path="purchases" element={<PurchasesPage />} />
         <Route path="purchases/new" element={<PurchaseEntryPage />} />

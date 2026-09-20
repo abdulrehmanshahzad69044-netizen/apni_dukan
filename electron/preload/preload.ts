@@ -42,11 +42,12 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("unit:delete", id),
     restore: (id) => ipcRenderer.invoke("unit:restore", id),
   },
-  product: {
+    product: {
     list: (query) => ipcRenderer.invoke("product:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("product:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("product:get", id),
     create: (input) => ipcRenderer.invoke("product:create", input),
+    createFull: (input) => ipcRenderer.invoke("product:createFull", input),
     update: (input) => ipcRenderer.invoke("product:update", input),
     delete: (id) => ipcRenderer.invoke("product:delete", id),
     restore: (id) => ipcRenderer.invoke("product:restore", id),

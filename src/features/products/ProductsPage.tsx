@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Search, Package, Plus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Search, Package, Plus, Sparkles } from "lucide-react";
 import { Page } from "@/components/ui/Page";
 import { Fab } from "@/components/ui/Fab";
 import { Input } from "@/components/ui/Input";
@@ -15,6 +16,8 @@ import { toast } from "@/lib/toast";
 import type { Product } from "../../../electron/shared/types/product";
 
 export function ProductsPage() {
+  const navigate = useNavigate();
+
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<number | "">("");
   const [formOpen, setFormOpen] = useState(false);
@@ -60,6 +63,13 @@ export function ProductsPage() {
         description="Your product catalog."
         actions={
           <div className="flex items-center gap-2">
+            <button
+              onClick={openCreate}
+              className="h-10 px-3 rounded-lg border bg-[rgb(var(--bg))] hover:bg-[rgb(var(--muted))] text-sm"
+              title="Quick add — just the product shell"
+            >
+              Quick Add
+            </button>
             <select
               value={categoryFilter}
               onChange={(e) =>
@@ -106,13 +116,22 @@ export function ProductsPage() {
             action={
               !search &&
               categoryFilter === "" && (
-                <button
-                  onClick={openCreate}
-                  className="inline-flex items-center gap-2 px-4 h-10 rounded-lg bg-[rgb(var(--fg))] text-[rgb(var(--bg))] text-sm font-medium"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Product
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={openCreate}
+                    className="inline-flex items-center gap-2 px-4 h-10 rounded-lg border text-sm font-medium hover:bg-[rgb(var(--muted))]"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Quick Add
+                  </button>
+                  <button
+                    onClick={() => navigate("/products/new-full")}
+                    className="inline-flex items-center gap-2 px-4 h-10 rounded-lg bg-[rgb(var(--fg))] text-[rgb(var(--bg))] text-sm font-medium"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Add Full Product
+                  </button>
+                </div>
               )
             }
           />
@@ -130,8 +149,7 @@ export function ProductsPage() {
         )}
       </Page>
 
-      <Fab onClick={openCreate} label="Add Product" />
-
+      <Fab onClick={() => navigate("/products/new-full")} label="Add Product" />
       <ProductFormModal
         open={formOpen}
         onClose={() => setFormOpen(false)}

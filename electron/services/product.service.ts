@@ -1,6 +1,13 @@
 import { and, asc, eq, isNull, like, or, sql } from "drizzle-orm";
 import { getDb } from "../database/client";
-import { products, categories, companies } from "../database/schema";
+import {
+  categories,
+  companies,
+  products,
+  stockBatches,
+  stockLedger,
+  variants,
+} from "../database/schema";
 import type {
   CreateProductInput,
   Product,
@@ -95,6 +102,92 @@ export const productService = {
       .returning({ id: products.id });
 
     const created = await this.getById(inserted.id);
+    if (!created) throw new Error("Failed to load created product");
+    return created;
+  },
+    /**
+   * Create a product + variant + opening stock batch in ONE transaction.
+   * Used by the "Add Full Product" screen.
+   */
+  async createFull(input: {
+    productName: string;
+    categoryId?: number | null;
+    companyId?: number | null;
+    variantName: string;
+    baseUnitId: number;
+    purchaseUnitId?: number | null;
+    purchaseUnitFactor?: number | null;
+    lowStockThreshold?: number | null;
+    openingQuantity: number;
+    openingCost: number;
+    suggestedRetailPrice?: number | null;
+    suggestedWholesalePrice?: number | null;
+  }): Promise<Product> {
+    const db = getDb();
+    const now = new Date();
+
+    const productId = db.transaction((tx) => {
+      // 1. Product
+      const [product] = tx
+        .insert(products)
+        .values({
+          name: input.productName,
+          categoryId: input.categoryId ?? null,
+          companyId: input.companyId ?? null,
+        })
+        .returning({ id: products.id })
+        .all();
+
+      // 2. Variant
+      const [variant] = tx
+        .insert(variants)
+        .values({
+          productId: product.id,
+          name: input.variantName,
+          baseUnitId: input.baseUnitId,
+          purchaseUnitId: input.purchaseUnitId ?? null,
+          purchaseUnitFactor: input.purchaseUnitFactor ?? null,
+          lowStockThreshold: input.lowStockThreshold ?? null,
+          isQuickItem: false,
+        })
+        .returning({ id: variants.id })
+        .all();
+
+      // 3. Opening stock batch
+      const [batch] = tx
+        .insert(stockBatches)
+        .values({
+          variantId: variant.id,
+          purchaseId: null,
+          purchasePrice: input.openingCost,
+          suggestedRetailPrice: input.suggestedRetailPrice ?? null,
+          suggestedWholesalePrice: input.suggestedWholesalePrice ?? null,
+          quantityPurchased: input.openingQuantity,
+          remainingQuantity: input.openingQuantity,
+          purchaseDate: now,
+          source: "opening",
+        })
+        .returning({ id: stockBatches.id })
+        .all();
+
+      // 4. Ledger entry
+      tx.insert(stockLedger)
+        .values({
+          batchId: batch.id,
+          variantId: variant.id,
+          quantityChange: input.openingQuantity,
+          unitCost: input.openingCost,
+          movementType: "purchase",
+          referenceType: null,
+          referenceId: null,
+          notes: "Opening stock from full product setup",
+        })
+        .run();
+
+      return product.id;
+    });
+
+    const created = await this.getById(productId);
     if (!created) throw new Error("Failed to load created product");
     return created;
   },
