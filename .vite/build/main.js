@@ -5961,6 +5961,13 @@ function getMigrationsPath() {
   }
   return path.join(process.resourcesPath, "drizzle");
 }
+function getMigrationBackupDir() {
+  const dir = path.join(getUserDataDir(), "migration-backups");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
 function createClient() {
   const dbPath = getDatabasePath();
   const sqlite = new Client(dbPath);
@@ -5986,6 +5993,55 @@ function closeDb() {
     _db = null;
   }
 }
+function timestamp$2() {
+  const d = /* @__PURE__ */ new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(
+    d.getHours()
+  )}_${p(d.getMinutes())}`;
+}
+function hasPendingMigrations() {
+  const migrationsFolder = getMigrationsPath();
+  if (!fs.existsSync(migrationsFolder)) return false;
+  const files = fs.readdirSync(migrationsFolder).filter((f) => f.endsWith(".sql")).sort();
+  if (files.length === 0) return false;
+  try {
+    const raw = getRawDb();
+    const rows = raw.prepare(
+      `SELECT COUNT(*) AS c FROM __drizzle_migrations`
+    ).get();
+    const applied = rows?.c ?? 0;
+    return applied < files.length;
+  } catch {
+    return false;
+  }
+}
+function backupBeforeMigration() {
+  try {
+    const dbPath = getDatabasePath();
+    if (!fs.existsSync(dbPath)) {
+      return null;
+    }
+    try {
+      getRawDb().pragma("wal_checkpoint(TRUNCATE)");
+    } catch {
+    }
+    const backupDir = getMigrationBackupDir();
+    const dest = path.join(backupDir, `pre_migration_${timestamp$2()}.db`);
+    fs.copyFileSync(dbPath, dest);
+    try {
+      const files = fs.readdirSync(backupDir).filter((f) => f.startsWith("pre_migration_") && f.endsWith(".db")).sort().reverse();
+      for (const f of files.slice(5)) {
+        fs.unlinkSync(path.join(backupDir, f));
+      }
+    } catch {
+    }
+    return dest;
+  } catch (e) {
+    console.warn("[migrate] Pre-migration backup failed:", e);
+    return null;
+  }
+}
 function runMigrations() {
   const migrationsFolder = getMigrationsPath();
   if (!fs.existsSync(migrationsFolder)) {
@@ -5993,6 +6049,12 @@ function runMigrations() {
       `[migrate] Migrations folder not found at ${migrationsFolder}. Skipping.`
     );
     return;
+  }
+  if (hasPendingMigrations()) {
+    const backup = backupBeforeMigration();
+    if (backup) {
+      console.log(`[migrate] Pre-migration backup created: ${backup}`);
+    }
   }
   console.log(`[migrate] Running migrations from ${migrationsFolder}`);
   try {
@@ -15041,7 +15103,6 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
-      // required for better-sqlite3 in main + preload APIs
     }
   });
   win.once("ready-to-show", () => win.show());
@@ -15050,7 +15111,26 @@ function createWindow() {
   }
 }
 require$$3$1.app.whenReady().then(() => {
-  runMigrations();
+  try {
+    runMigrations();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown migration error";
+    require$$3$1.dialog.showErrorBox(
+      "Database Update Failed",
+      [
+        "Apni Dukan could not update the database to the latest version.",
+        "",
+        "Your data has NOT been lost. A safety backup of your database was",
+        "created before the update was attempted.",
+        "",
+        "Please contact support and share the error below:",
+        "",
+        message
+      ].join("\n")
+    );
+    require$$3$1.app.exit(1);
+    return;
+  }
   registerAllIpc();
   createWindow();
   require$$3$1.app.on("activate", () => {

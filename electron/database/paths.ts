@@ -63,3 +63,15 @@ export function getMigrationsPath(): string {
   }
   return path.join(process.resourcesPath, "drizzle");
 }
+
+/**
+ * Directory for storing pre-migration DB backups.
+ * Kept separate from user backups so they don't clutter the UI list.
+ */
+export function getMigrationBackupDir(): string {
+  const dir = path.join(getUserDataDir(), "migration-backups");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
