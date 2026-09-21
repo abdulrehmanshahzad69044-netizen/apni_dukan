@@ -1,5 +1,23 @@
-# Logs
-logs
+# ── Dependencies ─────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build output ─────────────────────────────────────
+dist/
+dist-ssr/
+out/
+.vite/
+*.tsbuildinfo
+
+# ── Local database ───────────────────────────────────
+dev-apni-dukan.db
+dev-apni-dukan.db-shm
+dev-apni-dukan.db-wal
+*.db-journal
+
+# ── Logs ─────────────────────────────────────────────
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,20 +25,22 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# ── Environment ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
 
-# Editor directories and files
+# ── Editor / OS ──────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-out/
+# ── Electron Forge ───────────────────────────────────
+.electron/
