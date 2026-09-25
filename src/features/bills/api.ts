@@ -37,6 +37,10 @@ export const billApi = {
     await window.api.bill.deleteDraft(id);
   },
 
+  async getForDuplicate(id: number) {
+    return window.api.bill.getForDuplicate(id);
+  },
+
   async previewFifoCost(input: {
     variantId: number;
     quantity: number;

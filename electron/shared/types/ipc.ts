@@ -23,12 +23,14 @@ import type {
   UpdateUnitInput,
 } from "./unit";
 import type {
+  CreateFullProductInput,
   CreateProductInput,
   Product,
   ProductListQuery,
   UpdateProductInput,
 } from "./product";
 import type {
+  CreateQuickItemInput,
   CreateVariantInput,
   UpdateVariantInput,
   Variant,
@@ -170,17 +172,19 @@ export type AppApi = {
     ) => Promise<number>;
     get: (id: number) => Promise<Product | null>;
     create: (input: CreateProductInput) => Promise<Product>;
+    createFull: (input: CreateFullProductInput) => Promise<Product>;
     update: (input: UpdateProductInput) => Promise<Product>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
   };
-      variant: {
+  variant: {
     list: (query?: Partial<VariantListQuery>) => Promise<Variant[]>;
     count: (
       query?: Pick<VariantListQuery, "search" | "includeDeleted" | "productId">
     ) => Promise<number>;
     get: (id: number) => Promise<Variant | null>;
     create: (input: CreateVariantInput) => Promise<Variant>;
+    createQuick: (input: CreateQuickItemInput) => Promise<Variant>;
     update: (input: UpdateVariantInput) => Promise<Variant>;
     delete: (id: number) => Promise<{ ok: true }>;
     restore: (id: number) => Promise<{ ok: true }>;
@@ -188,6 +192,29 @@ export type AppApi = {
       id: number;
       pinned: boolean;
     }) => Promise<Variant>;
+    setPriceVolatile: (payload: {
+      id: number;
+      priceVolatile: boolean;
+    }) => Promise<Variant>;
+    promoteFromQuick: (id: number) => Promise<Variant>;
+    listVolatile: () => Promise<
+      Array<{
+        variantId: number;
+        productName: string;
+        variantName: string;
+        baseUnitShortName: string;
+        currentStock: number;
+        currentRetail: number | null;
+        currentWholesale: number | null;
+      }>
+    >;
+    bulkUpdatePrices: (payload: {
+      updates: Array<{
+        variantId: number;
+        retailPrice: number | null;
+        wholesalePrice: number | null;
+      }>;
+    }) => Promise<{ updated: number }>;
   };
   purchase: {
     list: (query?: Partial<PurchaseListQuery>) => Promise<Purchase[]>;
@@ -221,7 +248,7 @@ export type AppApi = {
     get: (id: number) => Promise<StockAdjustment | null>;
     create: (input: CreateAdjustmentInput) => Promise<StockAdjustment>;
   };
-  bill: {
+    bill: {
     list: (query?: Partial<BillListQuery>) => Promise<Bill[]>;
     count: (
       query?: Pick<
@@ -237,6 +264,21 @@ export type AppApi = {
       variantId: number;
       quantity: number;
     }) => Promise<FifoCostPreview>;
+    getForDuplicate: (id: number) => Promise<{
+      customerId: number | null;
+      remarks: string;
+      lines: Array<{
+        variantId: number;
+        productName: string;
+        variantName: string;
+        baseUnitShortName: string;
+        purchaseUnitShortName: string | null;
+        purchaseUnitFactor: number | null;
+        unitId: number;
+        quantity: number;
+        unitPrice: number;
+      }>;
+    } | null>;
   };
   payment: {
     list: (query?: Partial<PaymentListQuery>) => Promise<Payment[]>;

@@ -33,8 +33,28 @@ export function registerBillIpc() {
     return { ok: true };
   });
 
-    ipcMain.handle("bill:previewFifoCost", async (_e, rawInput: unknown) => {
+  ipcMain.handle("bill:previewFifoCost", async (_e, rawInput: unknown) => {
     const input = fifoCostPreviewSchema.parse(rawInput);
     return billService.previewFifoCost(input);
+  });
+
+    ipcMain.handle("bill:getForDuplicate", async (_e, id: number) => {
+    const detail = await billService.getById(id);
+    if (!detail) return null;
+    return {
+      customerId: detail.customerId,
+      remarks: detail.remarks ?? "",
+      lines: detail.items.map((it) => ({
+        variantId: it.variantId,
+        productName: it.productName,
+        variantName: it.variantName,
+        baseUnitShortName: it.baseUnitShortName,
+        purchaseUnitShortName: it.purchaseUnitShortName,
+        purchaseUnitFactor: it.purchaseUnitFactor,
+        unitId: it.unitId,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+      })),
+    };
   });
 }

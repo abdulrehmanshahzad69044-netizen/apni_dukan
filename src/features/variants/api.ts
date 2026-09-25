@@ -8,6 +8,16 @@ import type {
 
 type Query = Partial<VariantListQuery>;
 
+export type VolatileVariant = {
+  variantId: number;
+  productName: string;
+  variantName: string;
+  baseUnitShortName: string;
+  currentStock: number;
+  currentRetail: number | null;
+  currentWholesale: number | null;
+};
+
 export const variantApi = {
   async list(query: Query = {}): Promise<Variant[]> {
     return window.api.variant.list(query);
@@ -49,7 +59,28 @@ export const variantApi = {
     return window.api.variant.setPinned({ id, pinned });
   },
 
+  async setPriceVolatile(
+    id: number,
+    priceVolatile: boolean
+  ): Promise<Variant> {
+    return window.api.variant.setPriceVolatile({ id, priceVolatile });
+  },
+
   async promoteFromQuick(id: number): Promise<Variant> {
     return window.api.variant.promoteFromQuick(id);
+  },
+
+  async listVolatile(): Promise<VolatileVariant[]> {
+    return window.api.variant.listVolatile();
+  },
+
+  async bulkUpdatePrices(
+    updates: Array<{
+      variantId: number;
+      retailPrice: number | null;
+      wholesalePrice: number | null;
+    }>
+  ): Promise<{ updated: number }> {
+    return window.api.variant.bulkUpdatePrices({ updates });
   },
 };

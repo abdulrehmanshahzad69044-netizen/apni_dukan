@@ -42,7 +42,7 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("unit:delete", id),
     restore: (id) => ipcRenderer.invoke("unit:restore", id),
   },
-    product: {
+  product: {
     list: (query) => ipcRenderer.invoke("product:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("product:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("product:get", id),
@@ -52,7 +52,7 @@ const api: AppApi = {
     delete: (id) => ipcRenderer.invoke("product:delete", id),
     restore: (id) => ipcRenderer.invoke("product:restore", id),
   },
-      variant: {
+  variant: {
     list: (query) => ipcRenderer.invoke("variant:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("variant:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("variant:get", id),
@@ -63,8 +63,13 @@ const api: AppApi = {
     restore: (id) => ipcRenderer.invoke("variant:restore", id),
     setPinned: (payload) =>
       ipcRenderer.invoke("variant:setPinned", payload),
+    setPriceVolatile: (payload) =>
+      ipcRenderer.invoke("variant:setPriceVolatile", payload),
     promoteFromQuick: (id) =>
       ipcRenderer.invoke("variant:promoteFromQuick", id),
+    listVolatile: () => ipcRenderer.invoke("variant:listVolatile"),
+    bulkUpdatePrices: (payload) =>
+      ipcRenderer.invoke("variant:bulkUpdatePrices", payload),
   },
   purchase: {
     list: (query) => ipcRenderer.invoke("purchase:list", query ?? {}),
@@ -87,7 +92,7 @@ const api: AppApi = {
     get: (id) => ipcRenderer.invoke("adjustment:get", id),
     create: (input) => ipcRenderer.invoke("adjustment:create", input),
   },
-  bill: {
+    bill: {
     list: (query) => ipcRenderer.invoke("bill:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("bill:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("bill:get", id),
@@ -96,6 +101,8 @@ const api: AppApi = {
     deleteDraft: (id) => ipcRenderer.invoke("bill:deleteDraft", id),
     previewFifoCost: (input) =>
       ipcRenderer.invoke("bill:previewFifoCost", input),
+    getForDuplicate: (id) =>
+      ipcRenderer.invoke("bill:getForDuplicate", id),
   },
   payment: {
     list: (query) => ipcRenderer.invoke("payment:list", query ?? {}),

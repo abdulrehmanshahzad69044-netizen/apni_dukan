@@ -26,6 +26,7 @@ function toDto(row: {
   lowStockThreshold: number | null;
   pinned: number | boolean;
   isQuickItem: number | boolean;
+  priceVolatile: number | boolean;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -50,6 +51,7 @@ function toDto(row: {
     lowStockThreshold: row.lowStockThreshold,
     pinned: Boolean(row.pinned),
     isQuickItem: Boolean(row.isQuickItem),
+    priceVolatile: Boolean(row.priceVolatile),
     createdAt: Math.floor(row.createdAt.getTime() / 1000),
     updatedAt: Math.floor(row.updatedAt.getTime() / 1000),
     deletedAt: row.deletedAt
@@ -68,6 +70,7 @@ const variantSelect = {
   lowStockThreshold: variants.lowStockThreshold,
   pinned: variants.pinned,
   isQuickItem: variants.isQuickItem,
+  priceVolatile: variants.priceVolatile,
   createdAt: variants.createdAt,
   updatedAt: variants.updatedAt,
   deletedAt: variants.deletedAt,
@@ -142,22 +145,11 @@ export const variantService = {
     return created;
   },
 
-  /**
-   * Create a quick item from the bill entry screen.
-   * Creates (in one transaction):
-   *   - "Quick Items" category if missing
-   *   - "Piece" unit if missing
-   *   - Product
-   *   - Variant (marked as quick, pinned)
-   *   - First stock batch
-   *   - Stock ledger entry
-   */
   async createQuick(input: CreateQuickItemInput): Promise<Variant> {
     const db = getDb();
     const now = new Date();
 
     const variantId = db.transaction((tx) => {
-      // 1. Ensure Quick Items category
       const existingCats = tx
         .select({ id: categories.id })
         .from(categories)
@@ -177,7 +169,6 @@ export const variantService = {
         categoryId = created.id;
       }
 
-      // 2. Ensure Piece unit
       const existingUnits = tx
         .select({ id: units.id })
         .from(units)
@@ -197,7 +188,6 @@ export const variantService = {
         pieceUnitId = created.id;
       }
 
-      // 3. Create product
       const [product] = tx
         .insert(products)
         .values({
@@ -208,7 +198,6 @@ export const variantService = {
         .returning({ id: products.id })
         .all();
 
-      // 4. Create variant (quick + pinned)
       const [variant] = tx
         .insert(variants)
         .values({
@@ -224,7 +213,6 @@ export const variantService = {
         .returning({ id: variants.id })
         .all();
 
-      // 5. Create first stock batch
       const [batch] = tx
         .insert(stockBatches)
         .values({
@@ -242,7 +230,6 @@ export const variantService = {
         .returning({ id: stockBatches.id })
         .all();
 
-      // 6. Ledger entry
       tx.insert(stockLedger)
         .values({
           batchId: batch.id,
@@ -299,6 +286,21 @@ export const variantService = {
     return updated;
   },
 
+  async setPriceVolatile(
+    id: number,
+    priceVolatile: boolean
+  ): Promise<Variant> {
+    const db = getDb();
+    await db
+      .update(variants)
+      .set({ priceVolatile, updatedAt: new Date() })
+      .where(eq(variants.id, id));
+
+    const updated = await this.getById(id);
+    if (!updated) throw new Error(`Variant ${id} not found`);
+    return updated;
+  },
+
   async promoteFromQuick(id: number): Promise<Variant> {
     const db = getDb();
     await db
@@ -348,5 +350,102 @@ export const variantService = {
       .innerJoin(sql`products AS p`, sql`p.id = ${variants.productId}`)
       .where(conditions.length > 0 ? and(...conditions) : undefined);
     return row?.count ?? 0;
+  },
+
+  /**
+   * List all price-volatile variants with their current prices.
+   * Current prices come from the most recent batch with remaining stock.
+   */
+  async listVolatile(): Promise<
+    Array<{
+      variantId: number;
+      productName: string;
+      variantName: string;
+      baseUnitShortName: string;
+      currentStock: number;
+      currentRetail: number | null;
+      currentWholesale: number | null;
+    }>
+  > {
+    const db = getDb();
+    const rows = db.$client
+      .prepare(
+        `
+        SELECT
+          v.id                AS variantId,
+          p.name              AS productName,
+          v.name              AS variantName,
+          u.short_name        AS baseUnitShortName,
+          COALESCE(SUM(b.remaining_quantity), 0) AS currentStock,
+          (SELECT suggested_retail_price FROM stock_batches
+             WHERE variant_id = v.id AND remaining_quantity > 0
+             ORDER BY purchase_date DESC, id DESC LIMIT 1) AS currentRetail,
+          (SELECT suggested_wholesale_price FROM stock_batches
+             WHERE variant_id = v.id AND remaining_quantity > 0
+             ORDER BY purchase_date DESC, id DESC LIMIT 1) AS currentWholesale
+        FROM variants v
+        INNER JOIN products p ON p.id = v.product_id
+        INNER JOIN units    u ON u.id = v.base_unit_id
+        LEFT  JOIN stock_batches b ON b.variant_id = v.id AND b.remaining_quantity > 0
+        WHERE v.price_volatile = 1
+          AND v.deleted_at IS NULL
+        GROUP BY v.id
+        ORDER BY p.name, v.name
+        `
+      )
+      .all() as Array<{
+      variantId: number;
+      productName: string;
+      variantName: string;
+      baseUnitShortName: string;
+      currentStock: number;
+      currentRetail: number | null;
+      currentWholesale: number | null;
+    }>;
+
+    return rows;
+  },
+
+  /**
+   * Update retail/wholesale price for one variant on ALL batches with
+   * remaining stock. Also updates variants.updatedAt for audit purposes.
+   */
+  async bulkUpdatePrices(
+    updates: Array<{
+      variantId: number;
+      retailPrice: number | null;
+      wholesalePrice: number | null;
+    }>
+  ): Promise<{ updated: number }> {
+    const db = getDb();
+    let count = 0;
+
+    db.transaction((tx) => {
+      for (const u of updates) {
+        // Update all batches with remaining stock
+        tx.update(stockBatches)
+          .set({
+            suggestedRetailPrice: u.retailPrice,
+            suggestedWholesalePrice: u.wholesalePrice,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(stockBatches.variantId, u.variantId),
+              sql`${stockBatches.remainingQuantity} > 0`
+            )
+          )
+          .run();
+
+        tx.update(variants)
+          .set({ updatedAt: new Date() })
+          .where(eq(variants.id, u.variantId))
+          .run();
+
+        count++;
+      }
+    });
+
+    return { updated: count };
   },
 };

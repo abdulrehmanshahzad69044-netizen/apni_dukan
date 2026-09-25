@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { z } from "zod";
 import { variantService } from "../services/variant.service";
 import {
   createQuickItemSchema,
@@ -6,6 +7,16 @@ import {
   updateVariantSchema,
   variantListQuerySchema,
 } from "../shared/types/variant";
+
+const bulkPriceSchema = z.object({
+  updates: z.array(
+    z.object({
+      variantId: z.number().int().positive(),
+      retailPrice: z.number().int().nonnegative().nullable(),
+      wholesalePrice: z.number().int().nonnegative().nullable(),
+    })
+  ),
+});
 
 export function registerVariantIpc() {
   ipcMain.handle("variant:list", async (_e, rawQuery: unknown) => {
@@ -56,7 +67,23 @@ export function registerVariantIpc() {
     }
   );
 
+  ipcMain.handle(
+    "variant:setPriceVolatile",
+    async (_e, payload: { id: number; priceVolatile: boolean }) => {
+      return variantService.setPriceVolatile(payload.id, payload.priceVolatile);
+    }
+  );
+
   ipcMain.handle("variant:promoteFromQuick", async (_e, id: number) => {
     return variantService.promoteFromQuick(id);
+  });
+
+  ipcMain.handle("variant:listVolatile", async () => {
+    return variantService.listVolatile();
+  });
+
+  ipcMain.handle("variant:bulkUpdatePrices", async (_e, rawInput: unknown) => {
+    const input = bulkPriceSchema.parse(rawInput);
+    return variantService.bulkUpdatePrices(input.updates);
   });
 }

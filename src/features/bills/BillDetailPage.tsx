@@ -19,6 +19,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PrintBillModal } from "./PrintBillModal";
 import { useBill } from "./hooks";
 import { billApi } from "./api";
+import { Copy } from "lucide-react";
 import { toast } from "@/lib/toast";
 import {
   formatMoney,
@@ -101,6 +102,15 @@ export function BillDetailPage() {
                 Print
               </Button>
             )}
+            {isFinalized && (
+  <Button
+    variant="outline"
+    onClick={() => navigate(`/billing/new?duplicateFrom=${data.id}`)}
+  >
+    <Copy className="w-4 h-4" />
+    Duplicate
+  </Button>
+)}
             {isDraftish && (
               <>
                 <Button

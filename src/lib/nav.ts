@@ -14,6 +14,7 @@ import {
   Ruler,
   Layers,
   Truck,
+  TrendingUp,
   ClipboardList,
   HandCoins,
   Package2,
@@ -28,6 +29,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard, mobile: true },
+  { label: "Update Prices", to: "/update-prices", icon: TrendingUp },
   { label: "Billing", to: "/billing", icon: Receipt, mobile: true },
   { label: "Customers", to: "/customers", icon: Users, mobile: true },
   { label: "Inventory", to: "/inventory", icon: Boxes, mobile: true },

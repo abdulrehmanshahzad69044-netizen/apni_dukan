@@ -53,6 +53,20 @@ export function VariantsPage() {
     }
   }
 
+  async function handleToggleVolatile(v: Variant) {
+    try {
+      await variantApi.setPriceVolatile(v.id, !v.priceVolatile);
+      toast.success(
+        v.priceVolatile
+          ? "Removed from Update Prices"
+          : "Added to Update Prices"
+      );
+      await reload();
+    } catch (e) {
+      toast.error((e as Error).message ?? "Failed to update");
+    }
+  }
+
   return (
     <>
       <Page
@@ -124,6 +138,7 @@ export function VariantsPage() {
                 variant={v}
                 onEdit={() => openEdit(v)}
                 onDelete={() => setDeleting(v)}
+                onToggleVolatile={() => handleToggleVolatile(v)}
               />
             ))}
           </div>

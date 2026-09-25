@@ -28,6 +28,11 @@ export const variants = sqliteTable(
       .notNull()
       .default(false),
 
+    /** Price-volatile items (sugar, oil, etc.) show on the Update Prices page */
+    priceVolatile: integer("price_volatile", { mode: "boolean" })
+      .notNull()
+      .default(false),
+
     ...timestamps,
     ...softDelete,
   },
@@ -38,6 +43,7 @@ export const variants = sqliteTable(
     nameIdx: index("variants_name_idx").on(t.name),
     pinnedIdx: index("variants_pinned_idx").on(t.pinned),
     quickItemIdx: index("variants_quick_item_idx").on(t.isQuickItem),
+    volatileIdx: index("variants_volatile_idx").on(t.priceVolatile),
   })
 );
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect } from "react";
 import {
   Plus,
   Trash2,
@@ -88,6 +89,8 @@ function convertPriceByRatio(price: string, ratio: number): string {
 
 export function BillEntryPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const duplicateFromParam = searchParams.get("duplicateFrom");
 
   const [customerId, setCustomerId] = useState<number | "">("");
   const [billDate, setBillDate] = useState(toDateInputValue(new Date()));
@@ -112,6 +115,62 @@ export function BillEntryPage() {
     for (const s of stock) m.set(s.variantId, s);
     return m;
   }, [stock]);
+
+  // Load duplicate bill if ?duplicateFrom=ID
+useEffect(() => {
+  if (!duplicateFromParam) return;
+  const sourceId = Number(duplicateFromParam);
+  if (!Number.isFinite(sourceId)) return;
+
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const source = await billApi.getForDuplicate(sourceId);
+      if (!source || cancelled) return;
+
+      setCustomerId(source.customerId ?? "");
+      setRemarks(source.remarks ?? "");
+
+      const newLines: LineItem[] = [];
+      for (const l of source.lines) {
+        const stockItem = stockByVariant.get(l.variantId);
+        // Prefer the source bill's base unit for display
+        const fullVariant = await variantApi.get(l.variantId);
+        newLines.push({
+          key: makeKey(),
+          variantId: l.variantId,
+          productName: l.productName,
+          variantName: l.variantName,
+          baseUnitId: l.unitId,
+          baseUnitName: l.baseUnitShortName,
+          baseUnitShortName: l.baseUnitShortName,
+          purchaseUnitId: fullVariant?.purchaseUnitId ?? null,
+          purchaseUnitName: fullVariant?.purchaseUnitName ?? null,
+          purchaseUnitShortName: l.purchaseUnitShortName,
+          purchaseUnitFactor: l.purchaseUnitFactor,
+          enteredUnitId: l.unitId,
+          quantity: String(l.quantity / 1000),
+          unitPrice: String(l.unitPrice / 100),
+          priceMode: "retail",
+          latestRetailPricePaisa: stockItem?.latestRetailPrice ?? null,
+          latestWholesalePricePaisa: stockItem?.latestWholesalePrice ?? null,
+          availableStock: stockItem?.currentStock ?? 0,
+          avgCostPaisa: stockItem?.avgCost ?? 0,
+          isQuickItem: false,
+        });
+      }
+      setLines(newLines);
+      toast.success("Bill copied — edit and save");
+    } catch (e) {
+      toast.error((e as Error).message ?? "Failed to duplicate");
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [duplicateFromParam]);
 
   const selectedCustomer = useMemo(() => {
     if (customerId === "") return null;
@@ -144,8 +203,8 @@ export function BillEntryPage() {
       overridePrice !== undefined
         ? String(overridePrice)
         : retail !== null
-        ? String(retail / 100)
-        : "0";
+          ? String(retail / 100)
+          : "0";
 
     setLines((prev) => [
       ...prev,
@@ -494,11 +553,10 @@ export function BillEntryPage() {
                     key={v.id}
                     onClick={() => addVariant(v)}
                     disabled={out}
-                    className={`w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b last:border-b-0 ${
-                      out
+                    className={`w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b last:border-b-0 ${out
                         ? "opacity-50 cursor-not-allowed"
                         : "hover:bg-[rgb(var(--muted))]"
-                    }`}
+                      }`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -521,9 +579,8 @@ export function BillEntryPage() {
                         Stock
                       </div>
                       <div
-                        className={`text-sm font-medium ${
-                          out ? "text-red-600 dark:text-red-400" : ""
-                        }`}
+                        className={`text-sm font-medium ${out ? "text-red-600 dark:text-red-400" : ""
+                          }`}
                       >
                         {formatQuantity(available)}
                       </div>
@@ -585,9 +642,8 @@ export function BillEntryPage() {
               return (
                 <div
                   key={l.key}
-                  className={`rounded-xl border bg-[rgb(var(--card))] p-4 transition-all ${
-                    exceedsStock ? "border-red-500/50" : ""
-                  }`}
+                  className={`rounded-xl border bg-[rgb(var(--card))] p-4 transition-all ${exceedsStock ? "border-red-500/50" : ""
+                    }`}
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="min-w-0">
@@ -809,11 +865,10 @@ export function BillEntryPage() {
                   Remaining after this bill
                 </span>
                 <span
-                  className={`font-semibold ${
-                    remainingAfter > 0
+                  className={`font-semibold ${remainingAfter > 0
                       ? "text-amber-600 dark:text-amber-400"
                       : "text-green-600 dark:text-green-400"
-                  }`}
+                    }`}
                 >
                   {formatMoney(remainingAfter)}
                 </span>

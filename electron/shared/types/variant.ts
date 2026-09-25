@@ -21,6 +21,7 @@ export type Variant = {
   /** Pinned items sort to the top */
   pinned: boolean;  
 isQuickItem: boolean;
+  priceVolatile: boolean;
 
 
   createdAt: number;
