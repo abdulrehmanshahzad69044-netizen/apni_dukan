@@ -47,4 +47,25 @@ export const billApi = {
   }): Promise<FifoCostPreview> {
     return window.api.bill.previewFifoCost(input);
   },
+    async getForEdit(id: number) {
+    return window.api.bill.getForEdit(id);
+  },
+
+  async updateAndSave(input: {
+    id: number;
+    customerId: number | null;
+    billDate: Date;
+    paidAmount: number;
+    amountReceived: number;
+    remarks?: string;
+    status: "draft" | "held" | "finalized";
+    lines: Array<{
+      variantId: number;
+      unitId: number;
+      quantity: number;
+      unitPrice: number;
+    }>;
+  }): Promise<BillDetail> {
+    return window.api.bill.updateAndSave(input);
+  },
 };

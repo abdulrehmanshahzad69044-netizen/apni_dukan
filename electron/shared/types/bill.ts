@@ -129,3 +129,9 @@ export const fifoCostPreviewSchema = z.object({
 });
 
 export type FifoCostPreviewInput = z.infer<typeof fifoCostPreviewSchema>;
+
+export const updateBillSchema = createBillSchema.extend({
+  id: z.number().int().positive(),
+});
+
+export type UpdateBillInput = z.infer<typeof updateBillSchema>;

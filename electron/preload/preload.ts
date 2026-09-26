@@ -92,7 +92,7 @@ const api: AppApi = {
     get: (id) => ipcRenderer.invoke("adjustment:get", id),
     create: (input) => ipcRenderer.invoke("adjustment:create", input),
   },
-    bill: {
+  bill: {
     list: (query) => ipcRenderer.invoke("bill:list", query ?? {}),
     count: (query) => ipcRenderer.invoke("bill:count", query ?? {}),
     get: (id) => ipcRenderer.invoke("bill:get", id),
@@ -101,6 +101,9 @@ const api: AppApi = {
     deleteDraft: (id) => ipcRenderer.invoke("bill:deleteDraft", id),
     previewFifoCost: (input) =>
       ipcRenderer.invoke("bill:previewFifoCost", input),
+    getForEdit: (id) => ipcRenderer.invoke("bill:getForEdit", id),
+    updateAndSave: (input) =>
+      ipcRenderer.invoke("bill:updateAndSave", input),
     getForDuplicate: (id) =>
       ipcRenderer.invoke("bill:getForDuplicate", id),
   },

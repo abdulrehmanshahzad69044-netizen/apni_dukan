@@ -1,6 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Plus,
   Trash2,
@@ -89,7 +88,14 @@ function convertPriceByRatio(price: string, ratio: number): string {
 
 export function BillEntryPage() {
   const navigate = useNavigate();
+  const params = useParams();
   const [searchParams] = useSearchParams();
+
+  // Edit mode: /billing/edit/:id
+  const editId = params.id ? Number(params.id) : null;
+  const isEditMode = !!editId;
+
+  // Duplicate mode: /billing/new?duplicateFrom=ID
   const duplicateFromParam = searchParams.get("duplicateFrom");
 
   const [customerId, setCustomerId] = useState<number | "">("");
@@ -99,6 +105,7 @@ export function BillEntryPage() {
   const [lines, setLines] = useState<LineItem[]>([]);
   const [variantSearch, setVariantSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(isEditMode);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   const [quickItemOpen, setQuickItemOpen] = useState(false);
@@ -115,62 +122,6 @@ export function BillEntryPage() {
     for (const s of stock) m.set(s.variantId, s);
     return m;
   }, [stock]);
-
-  // Load duplicate bill if ?duplicateFrom=ID
-useEffect(() => {
-  if (!duplicateFromParam) return;
-  const sourceId = Number(duplicateFromParam);
-  if (!Number.isFinite(sourceId)) return;
-
-  let cancelled = false;
-
-  (async () => {
-    try {
-      const source = await billApi.getForDuplicate(sourceId);
-      if (!source || cancelled) return;
-
-      setCustomerId(source.customerId ?? "");
-      setRemarks(source.remarks ?? "");
-
-      const newLines: LineItem[] = [];
-      for (const l of source.lines) {
-        const stockItem = stockByVariant.get(l.variantId);
-        // Prefer the source bill's base unit for display
-        const fullVariant = await variantApi.get(l.variantId);
-        newLines.push({
-          key: makeKey(),
-          variantId: l.variantId,
-          productName: l.productName,
-          variantName: l.variantName,
-          baseUnitId: l.unitId,
-          baseUnitName: l.baseUnitShortName,
-          baseUnitShortName: l.baseUnitShortName,
-          purchaseUnitId: fullVariant?.purchaseUnitId ?? null,
-          purchaseUnitName: fullVariant?.purchaseUnitName ?? null,
-          purchaseUnitShortName: l.purchaseUnitShortName,
-          purchaseUnitFactor: l.purchaseUnitFactor,
-          enteredUnitId: l.unitId,
-          quantity: String(l.quantity / 1000),
-          unitPrice: String(l.unitPrice / 100),
-          priceMode: "retail",
-          latestRetailPricePaisa: stockItem?.latestRetailPrice ?? null,
-          latestWholesalePricePaisa: stockItem?.latestWholesalePrice ?? null,
-          availableStock: stockItem?.currentStock ?? 0,
-          avgCostPaisa: stockItem?.avgCost ?? 0,
-          isQuickItem: false,
-        });
-      }
-      setLines(newLines);
-      toast.success("Bill copied — edit and save");
-    } catch (e) {
-      toast.error((e as Error).message ?? "Failed to duplicate");
-    }
-  })();
-
-  return () => {
-    cancelled = true;
-  };
-}, [duplicateFromParam]);
 
   const selectedCustomer = useMemo(() => {
     if (customerId === "") return null;
@@ -195,6 +146,129 @@ useEffect(() => {
 
   const remainingAfter = Math.max(0, totalRecoverable - paidPaisa);
 
+  // ─── Load for edit mode ───
+  useEffect(() => {
+    if (!isEditMode || !editId) return;
+    let cancelled = false;
+    setLoading(true);
+
+    (async () => {
+      try {
+        const b = await billApi.getForEdit(editId);
+        if (!b || cancelled) {
+          if (!cancelled) {
+            toast.error("Bill not found or cannot be edited");
+            navigate("/billing");
+          }
+          return;
+        }
+
+        setCustomerId(b.customerId ?? "");
+        setBillDate(toDateInputValue(b.billDate));
+        setRemarks(b.remarks ?? "");
+        setPaidAmount(""); // reset — user will enter fresh on save
+
+        const newLines: LineItem[] = [];
+        for (const it of b.items) {
+          const stockItem = stockByVariant.get(it.variantId);
+          // Find enteredUnitId: use the base unit by default for edit
+          newLines.push({
+            key: makeKey(),
+            variantId: it.variantId,
+            productName: it.productName,
+            variantName: it.variantName,
+            baseUnitId: it.baseUnitId,
+            baseUnitName: it.baseUnitName,
+            baseUnitShortName: it.baseUnitShortName,
+            purchaseUnitId: it.purchaseUnitId,
+            purchaseUnitName: it.purchaseUnitName,
+            purchaseUnitShortName: it.purchaseUnitShortName,
+            purchaseUnitFactor: it.purchaseUnitFactor,
+            enteredUnitId: it.baseUnitId,
+            quantity: String(it.quantity / 1000),
+            unitPrice: String(it.unitPrice / 100),
+            priceMode: "retail",
+            latestRetailPricePaisa: stockItem?.latestRetailPrice ?? null,
+            latestWholesalePricePaisa:
+              stockItem?.latestWholesalePrice ?? null,
+            availableStock: stockItem?.currentStock ?? 0,
+            avgCostPaisa: stockItem?.avgCost ?? 0,
+            isQuickItem: false,
+          });
+        }
+        setLines(newLines);
+      } catch (e) {
+        toast.error((e as Error).message ?? "Failed to load bill");
+        navigate("/billing");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, editId]);
+
+  // ─── Load for duplicate mode ───
+  useEffect(() => {
+    if (isEditMode) return; // edit takes priority
+    if (!duplicateFromParam) return;
+    const sourceId = Number(duplicateFromParam);
+    if (!Number.isFinite(sourceId)) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const source = await billApi.getForDuplicate(sourceId);
+        if (!source || cancelled) return;
+
+        setCustomerId(source.customerId ?? "");
+        setRemarks(source.remarks ?? "");
+
+        const newLines: LineItem[] = [];
+        for (const l of source.lines) {
+          const stockItem = stockByVariant.get(l.variantId);
+          const fullVariant = await variantApi.get(l.variantId);
+          newLines.push({
+            key: makeKey(),
+            variantId: l.variantId,
+            productName: l.productName,
+            variantName: l.variantName,
+            baseUnitId: l.unitId,
+            baseUnitName: l.baseUnitShortName,
+            baseUnitShortName: l.baseUnitShortName,
+            purchaseUnitId: fullVariant?.purchaseUnitId ?? null,
+            purchaseUnitName: fullVariant?.purchaseUnitName ?? null,
+            purchaseUnitShortName: l.purchaseUnitShortName,
+            purchaseUnitFactor: l.purchaseUnitFactor,
+            enteredUnitId: l.unitId,
+            quantity: String(l.quantity / 1000),
+            unitPrice: String(l.unitPrice / 100),
+            priceMode: "retail",
+            latestRetailPricePaisa: stockItem?.latestRetailPrice ?? null,
+            latestWholesalePricePaisa:
+              stockItem?.latestWholesalePrice ?? null,
+            availableStock: stockItem?.currentStock ?? 0,
+            avgCostPaisa: stockItem?.avgCost ?? 0,
+            isQuickItem: false,
+          });
+        }
+        setLines(newLines);
+        toast.success("Bill copied — edit and save");
+      } catch (e) {
+        toast.error((e as Error).message ?? "Failed to duplicate");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duplicateFromParam, isEditMode]);
+
   function addVariantToLines(v: Variant, overridePrice?: number) {
     const stockItem = stockByVariant.get(v.id);
     const retail = stockItem?.latestRetailPrice ?? null;
@@ -203,8 +277,8 @@ useEffect(() => {
       overridePrice !== undefined
         ? String(overridePrice)
         : retail !== null
-          ? String(retail / 100)
-          : "0";
+        ? String(retail / 100)
+        : "0";
 
     setLines((prev) => [
       ...prev,
@@ -249,19 +323,9 @@ useEffect(() => {
 
   async function handleQuickItemConfirm(input: CreateQuickItemInput) {
     const created = await variantApi.createQuick(input);
-    // Refresh variants + stock before adding to the bill
     await reloadVariants();
     await reloadStock();
-
-    // Add to lines with the price the user entered
-    const unitPricePaisa = input.price;
-    // Note: stock refresh is async; we pass the price directly
-    const placeholder: Variant = created;
-    addVariantToLines(placeholder, unitPricePaisa / 100);
-
-    // Also make sure the stock info is updated for the newly added variant
-    // (it will be when the search dropdown next refreshes)
-
+    addVariantToLines(created, input.price / 100);
     toast.success(`"${created.productName}" added as quick item`);
   }
 
@@ -365,7 +429,7 @@ useEffect(() => {
         status === "finalized" ? Math.min(paidPaisa, billTotal) : 0;
       const excess = status === "finalized" ? paidPaisa - paidForThisBill : 0;
 
-      const created = await billApi.create({
+      const payload = {
         customerId: customerId === "" ? null : Number(customerId),
         billDate: new Date(billDate),
         paidAmount: paidForThisBill,
@@ -393,14 +457,28 @@ useEffect(() => {
             unitPrice: rupeesToPaisa(basePriceRupees),
           };
         }),
-      });
+      };
 
+      let createdId: number;
+      let billNumber: string;
+
+      if (isEditMode && editId) {
+        const updated = await billApi.updateAndSave({ id: editId, ...payload });
+        createdId = updated.id;
+        billNumber = updated.billNumber;
+      } else {
+        const created = await billApi.create(payload);
+        createdId = created.id;
+        billNumber = created.billNumber;
+      }
+
+      // Excess payment → apply to previous dues
       if (excess > 0 && customerId !== "") {
         try {
           await paymentApi.create({
             customerId: Number(customerId),
             amount: excess,
-            remarks: `Auto-applied from bill ${created.billNumber}`,
+            remarks: `Auto-applied from bill ${billNumber}`,
           });
         } catch (payErr) {
           console.error("Excess payment error:", payErr);
@@ -411,27 +489,43 @@ useEffect(() => {
       }
 
       const label =
-        status === "draft" ? "Draft" : status === "held" ? "Held bill" : "Bill";
-      toast.success(`${label} ${created.billNumber} saved`);
-      navigate(`/billing/${created.id}`);
+        status === "draft"
+          ? "Draft"
+          : status === "held"
+          ? "Held bill"
+          : "Bill";
+      toast.success(`${label} ${billNumber} saved`);
+      navigate(`/billing/${createdId}`);
     } catch (e) {
-      console.error("Bill create error:", e);
+      console.error("Bill save error:", e);
       toast.error((e as Error).message ?? "Failed to save bill");
     } finally {
       setSaving(false);
     }
   }
 
+  if (loading) {
+    return (
+      <Page title="Loading…">
+        <div className="flex items-center justify-center py-20">
+          <div className="w-5 h-5 border-2 border-[rgb(var(--muted-fg))] border-t-[rgb(var(--fg))] rounded-full animate-spin" />
+        </div>
+      </Page>
+    );
+  }
+
   return (
     <>
       <Page
-        title="New Bill"
-        description="Create a sale."
+        title={isEditMode ? "Resume Bill" : "New Bill"}
+        description={
+          isEditMode ? "Continue editing this bill." : "Create a sale."
+        }
         actions={
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
-              onClick={() => navigate("/billing")}
+              onClick={() => navigate(-1)}
               disabled={saving}
             >
               <X className="w-4 h-4" />
@@ -453,13 +547,17 @@ useEffect(() => {
               <FileEdit className="w-4 h-4" />
               Draft
             </Button>
-            <Button onClick={() => saveWithStatus("finalized")} loading={saving}>
+            <Button
+              onClick={() => saveWithStatus("finalized")}
+              loading={saving}
+            >
               <Save className="w-4 h-4" />
-              Save Bill
+              {isEditMode ? "Finalize & Save" : "Save Bill"}
             </Button>
           </div>
         }
       >
+        {/* Header */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="space-y-1.5">
             <Label>Customer</Label>
@@ -506,6 +604,7 @@ useEffect(() => {
           </div>
         )}
 
+        {/* Search */}
         <div className="rounded-xl border bg-[rgb(var(--card))] p-4 mb-6">
           <Label className="mb-2 block">Add Item</Label>
           <div className="relative">
@@ -534,9 +633,6 @@ useEffect(() => {
                       <div className="text-sm font-medium text-blue-700 dark:text-blue-400">
                         Add "{variantSearch.trim()}" as quick item
                       </div>
-                      <div className="text-xs text-blue-600/70 dark:text-blue-400/70">
-                        Create a new product on the fly
-                      </div>
                     </div>
                     <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                   </button>
@@ -553,10 +649,11 @@ useEffect(() => {
                     key={v.id}
                     onClick={() => addVariant(v)}
                     disabled={out}
-                    className={`w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b last:border-b-0 ${out
+                    className={`w-full flex items-center justify-between gap-3 px-3 py-2 text-left border-b last:border-b-0 ${
+                      out
                         ? "opacity-50 cursor-not-allowed"
                         : "hover:bg-[rgb(var(--muted))]"
-                      }`}
+                    }`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -579,8 +676,9 @@ useEffect(() => {
                         Stock
                       </div>
                       <div
-                        className={`text-sm font-medium ${out ? "text-red-600 dark:text-red-400" : ""
-                          }`}
+                        className={`text-sm font-medium ${
+                          out ? "text-red-600 dark:text-red-400" : ""
+                        }`}
                       >
                         {formatQuantity(available)}
                       </div>
@@ -606,6 +704,7 @@ useEffect(() => {
           )}
         </div>
 
+        {/* Lines */}
         {lines.length === 0 ? (
           <EmptyState
             icon={<Plus className="w-6 h-6" />}
@@ -642,8 +741,9 @@ useEffect(() => {
               return (
                 <div
                   key={l.key}
-                  className={`rounded-xl border bg-[rgb(var(--card))] p-4 transition-all ${exceedsStock ? "border-red-500/50" : ""
-                    }`}
+                  className={`rounded-xl border bg-[rgb(var(--card))] p-4 transition-all ${
+                    exceedsStock ? "border-red-500/50" : ""
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="min-w-0">
@@ -784,6 +884,7 @@ useEffect(() => {
           </div>
         )}
 
+        {/* Summary */}
         <div className="rounded-xl border bg-[rgb(var(--card))] p-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
@@ -865,10 +966,11 @@ useEffect(() => {
                   Remaining after this bill
                 </span>
                 <span
-                  className={`font-semibold ${remainingAfter > 0
+                  className={`font-semibold ${
+                    remainingAfter > 0
                       ? "text-amber-600 dark:text-amber-400"
                       : "text-green-600 dark:text-green-400"
-                    }`}
+                  }`}
                 >
                   {formatMoney(remainingAfter)}
                 </span>

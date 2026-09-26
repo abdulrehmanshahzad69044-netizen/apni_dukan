@@ -668,4 +668,274 @@ export const billService = {
       availableQuantity,
     };
   },
+
+
+    /**
+   * Load a draft/held bill with its items in the shape Bill Entry expects.
+   * Returns raw quantities/prices (not formatted) so the form can pre-fill.
+   */
+  async getForEdit(id: number): Promise<{
+    id: number;
+    billNumber: string;
+    customerId: number | null;
+    billDate: number;
+    remarks: string;
+    status: "draft" | "held";
+    items: Array<{
+      variantId: number;
+      productName: string;
+      variantName: string;
+      baseUnitId: number;
+      baseUnitName: string;
+      baseUnitShortName: string;
+      purchaseUnitId: number | null;
+      purchaseUnitName: string | null;
+      purchaseUnitShortName: string | null;
+      purchaseUnitFactor: number | null;
+      unitId: number;
+      quantity: number; // milli-units
+      unitPrice: number; // paisa
+    }>;
+  } | null> {
+    const db = getDb();
+
+    const [bill] = await db
+      .select()
+      .from(bills)
+      .where(eq(bills.id, id))
+      .limit(1);
+
+    if (!bill) return null;
+    if (bill.status !== "draft" && bill.status !== "held") return null;
+
+    const items = await db
+      .select({
+        variantId: billItems.variantId,
+        unitId: billItems.unitId,
+        quantity: billItems.quantity,
+        unitPrice: billItems.unitPrice,
+        productName: sql<string>`p.name`,
+        variantName: sql<string>`v.name`,
+        baseUnitId: sql<number>`v.base_unit_id`,
+        baseUnitName: sql<string>`u.name`,
+        baseUnitShortName: sql<string>`u.short_name`,
+        purchaseUnitId: sql<number | null>`v.purchase_unit_id`,
+        purchaseUnitName: sql<string | null>`pu.name`,
+        purchaseUnitShortName: sql<string | null>`pu.short_name`,
+        purchaseUnitFactor: sql<number | null>`v.purchase_unit_factor`,
+      })
+      .from(billItems)
+      .innerJoin(sql`variants v`, sql`v.id = ${billItems.variantId}`)
+      .innerJoin(sql`products p`, sql`p.id = v.product_id`)
+      .innerJoin(sql`units u`, sql`u.id = v.base_unit_id`)
+      .leftJoin(sql`units pu`, sql`pu.id = v.purchase_unit_id`)
+      .where(eq(billItems.billId, id))
+      .orderBy(asc(billItems.id));
+
+    return {
+      id: bill.id,
+      billNumber: bill.billNumber,
+      customerId: bill.customerId,
+      billDate: Math.floor(bill.billDate.getTime() / 1000),
+      remarks: bill.remarks ?? "",
+      status: bill.status as "draft" | "held",
+      items: items.map((it) => ({
+        variantId: it.variantId,
+        productName: it.productName,
+        variantName: it.variantName,
+        baseUnitId: it.baseUnitId,
+        baseUnitName: it.baseUnitName,
+        baseUnitShortName: it.baseUnitShortName,
+        purchaseUnitId: it.purchaseUnitId,
+        purchaseUnitName: it.purchaseUnitName,
+        purchaseUnitShortName: it.purchaseUnitShortName,
+        purchaseUnitFactor: it.purchaseUnitFactor,
+        unitId: it.unitId,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+      })),
+    };
+  },
+
+  /**
+   * Replace a draft/held bill's items and either finalize it or keep it held/draft.
+   * Deletes all existing items and re-inserts them (simplest, safest).
+   * Runs full FIFO consumption + customer balance update if status = "finalized".
+   */
+  async updateAndSave(
+    id: number,
+    input: CreateBillInput
+  ): Promise<BillDetail> {
+    const db = getDb();
+
+    const [bill] = await db
+      .select()
+      .from(bills)
+      .where(eq(bills.id, id))
+      .limit(1);
+
+    if (!bill) throw new Error(`Bill ${id} not found`);
+    if (bill.status !== "draft" && bill.status !== "held") {
+      throw new Error(`Only draft or held bills can be edited`);
+    }
+
+    const totalAmount = computeTotal(input.lines);
+    const paidAmount = input.paidAmount ?? 0;
+    const amountReceived = input.amountReceived ?? paidAmount;
+    const status = input.status ?? "finalized";
+    const isDraftish = status === "draft" || status === "held";
+    const billDate = input.billDate ?? bill.billDate;
+
+    db.transaction((tx) => {
+      // Read customer outstanding at the moment of finalize
+      let previousDue = 0;
+      let customerOutstandingBefore = 0;
+      if (!isDraftish && input.customerId) {
+        const [cust] = tx
+          .select({ cachedOutstanding: customers.cachedOutstanding })
+          .from(customers)
+          .where(eq(customers.id, input.customerId))
+          .limit(1)
+          .all();
+        if (cust) {
+          previousDue = cust.cachedOutstanding;
+          customerOutstandingBefore = cust.cachedOutstanding;
+        }
+      }
+
+      // Wipe existing items
+      tx.delete(billItems).where(eq(billItems.billId, id)).run();
+
+      let totalCogs = 0;
+
+      // Re-insert items
+      for (const line of input.lines) {
+        const lineTotal = Math.round(
+          (line.quantity * line.unitPrice) / 1000
+        );
+
+        const [item] = tx
+          .insert(billItems)
+          .values({
+            billId: id,
+            variantId: line.variantId,
+            unitId: line.unitId,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            lineTotal,
+            lineCogs: 0,
+          })
+          .returning({ id: billItems.id })
+          .all();
+
+        if (!isDraftish) {
+          const availableBatches = tx
+            .select()
+            .from(stockBatches)
+            .where(
+              and(
+                eq(stockBatches.variantId, line.variantId),
+                sql`${stockBatches.remainingQuantity} > 0`
+              )
+            )
+            .orderBy(asc(stockBatches.purchaseDate), asc(stockBatches.id))
+            .all();
+
+          const totalAvailable = availableBatches.reduce(
+            (sum, b) => sum + b.remainingQuantity,
+            0
+          );
+
+          if (totalAvailable < line.quantity) {
+            throw new Error(
+              `Not enough stock for variant ${line.variantId}. Available: ${(totalAvailable / 1000).toFixed(3)}, requested: ${(line.quantity / 1000).toFixed(3)}`
+            );
+          }
+
+          let remaining = line.quantity;
+          let lineCogs = 0;
+
+          for (const batch of availableBatches) {
+            if (remaining <= 0) break;
+            const consume = Math.min(remaining, batch.remainingQuantity);
+            remaining -= consume;
+
+            const costContribution = Math.round(
+              (consume * batch.purchasePrice) / 1000
+            );
+            lineCogs += costContribution;
+
+            tx.update(stockBatches)
+              .set({ remainingQuantity: batch.remainingQuantity - consume })
+              .where(eq(stockBatches.id, batch.id))
+              .run();
+
+            tx.insert(billItemFifo)
+              .values({
+                billItemId: item.id,
+                batchId: batch.id,
+                quantityConsumed: consume,
+                unitCost: batch.purchasePrice,
+              })
+              .run();
+
+            tx.insert(stockLedger)
+              .values({
+                batchId: batch.id,
+                variantId: line.variantId,
+                quantityChange: -consume,
+                unitCost: batch.purchasePrice,
+                movementType: "sale",
+                referenceType: "bill",
+                referenceId: id,
+                notes: null,
+              })
+              .run();
+          }
+
+          tx.update(billItems)
+            .set({ lineCogs })
+            .where(eq(billItems.id, item.id))
+            .run();
+
+          totalCogs += lineCogs;
+        }
+      }
+
+      const remainingAmount = isDraftish ? 0 : totalAmount - paidAmount;
+
+      tx.update(bills)
+        .set({
+          customerId: input.customerId ?? null,
+          billDate,
+          totalAmount,
+          previousDue: isDraftish ? 0 : previousDue,
+          paidAmount: isDraftish ? 0 : paidAmount,
+          amountReceived: isDraftish ? 0 : amountReceived,
+          remainingAmount,
+          cogs: totalCogs,
+          status,
+          remarks: input.remarks ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(bills.id, id))
+        .run();
+
+      // Customer balance update
+      if (!isDraftish && input.customerId) {
+        const delta = totalAmount - paidAmount;
+        tx.update(customers)
+          .set({
+            cachedOutstanding: customerOutstandingBefore + delta,
+            updatedAt: new Date(),
+          })
+          .where(eq(customers.id, input.customerId))
+          .run();
+      }
+    });
+
+    const updated = await this.getById(id);
+    if (!updated) throw new Error("Failed to load updated bill");
+    return updated;
+  },
 };

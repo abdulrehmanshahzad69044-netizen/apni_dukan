@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 import { billService } from "../services/bill.service";
 import { billListQuerySchema, createBillSchema, fifoCostPreviewSchema } from "../shared/types/bill";
+import { updateBillSchema } from "../shared/types/bill";
 
 export function registerBillIpc() {
   ipcMain.handle("bill:list", async (_e, rawQuery: unknown) => {
@@ -38,7 +39,7 @@ export function registerBillIpc() {
     return billService.previewFifoCost(input);
   });
 
-    ipcMain.handle("bill:getForDuplicate", async (_e, id: number) => {
+  ipcMain.handle("bill:getForDuplicate", async (_e, id: number) => {
     const detail = await billService.getById(id);
     if (!detail) return null;
     return {
@@ -56,5 +57,14 @@ export function registerBillIpc() {
         unitPrice: it.unitPrice,
       })),
     };
+  });
+
+    ipcMain.handle("bill:getForEdit", async (_e, id: number) => {
+    return billService.getForEdit(id);
+  });
+
+  ipcMain.handle("bill:updateAndSave", async (_e, payload: unknown) => {
+    const input = updateBillSchema.parse(payload);
+    return billService.updateAndSave(input.id, input);
   });
 }

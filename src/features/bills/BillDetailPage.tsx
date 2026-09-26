@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Trash2,
   Printer,
+  Pencil,
 } from "lucide-react";
 import { Page } from "@/components/ui/Page";
 import { Button } from "@/components/ui/Button";
@@ -103,30 +104,38 @@ export function BillDetailPage() {
               </Button>
             )}
             {isFinalized && (
-  <Button
-    variant="outline"
-    onClick={() => navigate(`/billing/new?duplicateFrom=${data.id}`)}
-  >
-    <Copy className="w-4 h-4" />
-    Duplicate
-  </Button>
-)}
-            {isDraftish && (
-              <>
-                <Button
-                  variant="ghost"
-                  onClick={() => setConfirmDeleteOpen(true)}
-                  disabled={finalizing}
-                >
-                  <Trash2 className="w-4 h-4 text-red-600" />
-                  Delete
-                </Button>
-                <Button onClick={handleFinalize} loading={finalizing}>
-                  <CheckCircle2 className="w-4 h-4" />
-                  Finalize Bill
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/billing/new?duplicateFrom=${data.id}`)}
+              >
+                <Copy className="w-4 h-4" />
+                Duplicate
+              </Button>
             )}
+            {isDraftish && (
+  <>
+    <Button
+      variant="ghost"
+      onClick={() => setConfirmDeleteOpen(true)}
+      disabled={finalizing}
+    >
+      <Trash2 className="w-4 h-4 text-red-600" />
+      Delete
+    </Button>
+    <Button
+      variant="outline"
+      onClick={() => navigate(`/billing/edit/${data.id}`)}
+      disabled={finalizing}
+    >
+      <Pencil className="w-4 h-4" />
+      Resume Editing
+    </Button>
+    <Button onClick={handleFinalize} loading={finalizing}>
+      <CheckCircle2 className="w-4 h-4" />
+      Finalize Bill
+    </Button>
+  </>
+)}
             <Button variant="ghost" onClick={() => navigate("/billing")}>
               <ArrowLeft className="w-4 h-4" />
               Back
@@ -167,11 +176,10 @@ export function BillDetailPage() {
           <div className="rounded-xl border bg-[rgb(var(--card))] p-4">
             <p className="text-xs text-[rgb(var(--muted-fg))]">Balance Due</p>
             <p
-              className={`text-xl font-semibold mt-1 ${
-                balanceDue > 0
+              className={`text-xl font-semibold mt-1 ${balanceDue > 0
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-[rgb(var(--fg))]"
-              }`}
+                }`}
             >
               {formatMoney(balanceDue)}
             </p>
@@ -179,13 +187,12 @@ export function BillDetailPage() {
           <div className="rounded-xl border bg-[rgb(var(--card))] p-4">
             <p className="text-xs text-[rgb(var(--muted-fg))]">Profit</p>
             <p
-              className={`text-xl font-semibold mt-1 ${
-                isFinalized
+              className={`text-xl font-semibold mt-1 ${isFinalized
                   ? data.grossProfit >= 0
                     ? "text-green-600 dark:text-green-400"
                     : "text-red-600 dark:text-red-400"
                   : "text-[rgb(var(--muted-fg))]"
-              }`}
+                }`}
             >
               {isFinalized ? formatMoney(data.grossProfit) : "—"}
             </p>
@@ -286,11 +293,10 @@ export function BillDetailPage() {
                             {formatMoney(item.lineCogs)}
                           </td>
                           <td
-                            className={`text-right px-4 py-3 ${
-                              itemProfit >= 0
+                            className={`text-right px-4 py-3 ${itemProfit >= 0
                                 ? "text-green-600 dark:text-green-400"
                                 : "text-red-600 dark:text-red-400"
-                            }`}
+                              }`}
                           >
                             {formatMoney(itemProfit)}
                           </td>

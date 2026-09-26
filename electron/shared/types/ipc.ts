@@ -264,7 +264,7 @@ export type AppApi = {
       variantId: number;
       quantity: number;
     }) => Promise<FifoCostPreview>;
-    getForDuplicate: (id: number) => Promise<{
+        getForDuplicate: (id: number) => Promise<{
       customerId: number | null;
       remarks: string;
       lines: Array<{
@@ -279,6 +279,45 @@ export type AppApi = {
         unitPrice: number;
       }>;
     } | null>;
+    getForEdit: (id: number) => Promise<{
+      id: number;
+      billNumber: string;
+      customerId: number | null;
+      billDate: number;
+      remarks: string;
+      status: "draft" | "held";
+      items: Array<{
+        variantId: number;
+        productName: string;
+        variantName: string;
+        baseUnitId: number;
+        baseUnitName: string;
+        baseUnitShortName: string;
+        purchaseUnitId: number | null;
+        purchaseUnitName: string | null;
+        purchaseUnitShortName: string | null;
+        purchaseUnitFactor: number | null;
+        unitId: number;
+        quantity: number;
+        unitPrice: number;
+      }>;
+    } | null>;
+    updateAndSave: (input: {
+      id: number;
+      customerId: number | null;
+      billDate: Date;
+      paidAmount: number;
+      amountReceived: number;
+      remarks?: string;
+      status: "draft" | "held" | "finalized";
+      lines: Array<{
+        variantId: number;
+        unitId: number;
+        quantity: number;
+        unitPrice: number;
+      }>;
+    }) => Promise<BillDetail>;
+  
   };
   payment: {
     list: (query?: Partial<PaymentListQuery>) => Promise<Payment[]>;

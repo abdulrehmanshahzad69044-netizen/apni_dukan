@@ -36,6 +36,7 @@ export function AppRouter() {
         <Route path="billing" element={<BillsPage />} />
         <Route path="billing/new" element={<BillEntryPage />} />
         <Route path="billing/:id" element={<BillDetailPage />} />
+        <Route path="billing/edit/:id" element={<BillEntryPage />} />
 
         <Route path="customers" element={<CustomersPage />} />
         <Route path="companies" element={<CompaniesPage />} />
