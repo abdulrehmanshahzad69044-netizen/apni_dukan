@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -19,6 +19,8 @@ import {
   formatQuantity,
   quantityToMilli,
   rupeesToPaisa,
+  paisaToRupees,
+  milliToQuantity,
 } from "@/lib/format";
 import { productApi } from "./api";
 import { categoryApi } from "../categories/api";
@@ -27,6 +29,13 @@ import { unitApi } from "../units/api";
 import { useCategories } from "../categories/hooks";
 import { useCompanies } from "../companies/hooks";
 import { useUnits } from "../units/hooks";
+
+/**
+ * Which unit a specific field is being entered in.
+ * "base" = the variant's base unit (e.g. Bottle)
+ * "bulk" = the variant's purchase unit (e.g. Crate)
+ */
+type FieldUnit = "base" | "bulk";
 
 export function FullProductPage() {
   const navigate = useNavigate();
@@ -41,18 +50,25 @@ export function FullProductPage() {
   const [baseUnitId, setBaseUnitId] = useState<number | "">("");
   const [purchaseUnitId, setPurchaseUnitId] = useState<number | "">("");
   const [purchaseUnitFactor, setPurchaseUnitFactor] = useState("");
-  const [threshold, setThreshold] = useState("");
+
+  // Field units — one per field
+  const [quantityUnit, setQuantityUnit] = useState<FieldUnit>("base");
+  const [costUnit, setCostUnit] = useState<FieldUnit>("base");
+  const [retailUnit, setRetailUnit] = useState<FieldUnit>("base");
+  const [wholesaleUnit, setWholesaleUnit] = useState<FieldUnit>("base");
+  const [thresholdUnit, setThresholdUnit] = useState<FieldUnit>("base");
 
   // Opening stock
-  const [openingQuantity, setOpeningQuantity] = useState("");
-  const [openingCost, setOpeningCost] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [cost, setCost] = useState("");
   const [retail, setRetail] = useState("");
   const [wholesale, setWholesale] = useState("");
+  const [threshold, setThreshold] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Inline "New X" modals
+  // Inline creation modals
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const [newCompanyOpen, setNewCompanyOpen] = useState(false);
   const [newUnitOpen, setNewUnitOpen] = useState(false);
@@ -61,44 +77,124 @@ export function FullProductPage() {
   const { data: companies, reload: reloadCompanies } = useCompanies();
   const { data: units, reload: reloadUnits } = useUnits();
 
-  // Live preview
-  const previewStock = useMemo(() => {
-    const qty = Number(openingQuantity) || 0;
-    const cost = Number(openingCost) || 0;
-    return rupeesToPaisa(qty * cost);
-  }, [openingQuantity, openingCost]);
+  // ── Derived values ──
+  const factor = useMemo(() => {
+    if (purchaseUnitId === "") return 1;
+    const n = Number(purchaseUnitFactor);
+    if (!Number.isFinite(n) || n <= 1) return 1;
+    return Math.round(n);
+  }, [purchaseUnitId, purchaseUnitFactor]);
 
-  const previewConversion = useMemo(() => {
-    if (purchaseUnitId === "" || !purchaseUnitFactor) return null;
-    const f = Number(purchaseUnitFactor);
-    if (!Number.isFinite(f) || f <= 1) return null;
-    const from = units.find((u) => u.id === purchaseUnitId);
-    const to = baseUnitId !== "" ? units.find((u) => u.id === baseUnitId) : null;
-    if (!from || !to) return null;
-    return `1 ${from.name} = ${f} ${to.name}${f !== 1 ? "s" : ""}`;
-  }, [purchaseUnitId, purchaseUnitFactor, baseUnitId, units]);
+  const hasBulk = factor > 1;
 
+  // Auto-toggle to bulk default when a bulk unit becomes available
+  // (once when the factor first becomes > 1)
+  const [autoToggled, setAutoToggled] = useState(false);
+  useEffect(() => {
+    if (hasBulk && !autoToggled) {
+      setQuantityUnit("bulk");
+      setCostUnit("bulk");
+      setRetailUnit("bulk");
+      setWholesaleUnit("bulk");
+      setThresholdUnit("bulk");
+      setAutoToggled(true);
+    }
+    if (!hasBulk && autoToggled) {
+      setQuantityUnit("base");
+      setCostUnit("base");
+      setRetailUnit("base");
+      setWholesaleUnit("base");
+      setThresholdUnit("base");
+      setAutoToggled(false);
+    }
+  }, [hasBulk, autoToggled]);
+
+  // ── Conversions (live previews) ──
+  // For quantity: base = entered * factor (if bulk); bulk = entered
+  const qtyNum = Number(quantity) || 0;
+  const qtyInBase = quantityUnit === "bulk" ? qtyNum * factor : qtyNum;
+
+  // For prices: base price = entered / factor (if bulk); bulk price = entered
+  const costNum = Number(cost) || 0;
+  const costInBase =
+    costUnit === "bulk" && factor > 0 ? costNum / factor : costNum;
+
+  const retailNum = Number(retail) || 0;
+  const retailInBase =
+    retailUnit === "bulk" && factor > 0 ? retailNum / factor : retailNum;
+
+  const wholesaleNum = Number(wholesale) || 0;
+  const wholesaleInBase =
+    wholesaleUnit === "bulk" && factor > 0
+      ? wholesaleNum / factor
+      : wholesaleNum;
+
+  const thresholdNum = Number(threshold) || 0;
+  const thresholdInBase =
+    thresholdUnit === "bulk" ? thresholdNum * factor : thresholdNum;
+
+  // Opening stock value (base qty × base cost)
+  const openingStockValue = rupeesToPaisa(qtyInBase * costInBase);
+
+  // Units short names
+  const baseUnitShort =
+    units.find((u) => u.id === baseUnitId)?.shortName ?? "base";
+  const bulkUnitShort =
+    units.find((u) => u.id === purchaseUnitId)?.shortName ?? "bulk";
+
+  // ── Conversion preview text ──
+  function qtyPreview(): string | null {
+    if (!hasBulk || quantityUnit !== "bulk") return null;
+    return `= ${formatQuantity(quantityToMilli(qtyInBase))} ${baseUnitShort}`;
+  }
+
+  function costPreview(): string | null {
+    if (!hasBulk || costUnit !== "bulk") return null;
+    return `= ${formatMoney(rupeesToPaisa(costInBase))} per ${baseUnitShort}`;
+  }
+
+  function retailPreview(): string | null {
+    if (!hasBulk || retailUnit !== "bulk") return null;
+    return `= ${formatMoney(rupeesToPaisa(retailInBase))} per ${baseUnitShort}`;
+  }
+
+  function wholesalePreview(): string | null {
+    if (!hasBulk || wholesaleUnit !== "bulk") return null;
+    return `= ${formatMoney(rupeesToPaisa(wholesaleInBase))} per ${baseUnitShort}`;
+  }
+
+  function thresholdPreview(): string | null {
+    if (!hasBulk || thresholdUnit !== "bulk") return null;
+    return `= ${formatQuantity(quantityToMilli(thresholdInBase))} ${baseUnitShort}`;
+  }
+
+  // ── Quick toggle all fields ──
+  function setAllUnits(u: FieldUnit) {
+    setQuantityUnit(u);
+    setCostUnit(u);
+    setRetailUnit(u);
+    setWholesaleUnit(u);
+    setThresholdUnit(u);
+  }
+
+  // ── Submit ──
   async function handleSave() {
     if (!productName.trim()) return setError("Product name is required");
     if (!variantName.trim()) return setError("Variant name is required");
     if (baseUnitId === "") return setError("Base unit is required");
-    const qty = Number(openingQuantity);
-    const cost = Number(openingCost);
-    if (!Number.isFinite(qty) || qty <= 0) {
+
+    if (!Number.isFinite(qtyInBase) || qtyInBase <= 0) {
       return setError("Opening quantity must be positive");
     }
-    if (!Number.isFinite(cost) || cost < 0) {
+    if (!Number.isFinite(costInBase) || costInBase < 0) {
       return setError("Opening cost must be non-negative");
     }
 
     const hasPurchaseUnit = purchaseUnitId !== "";
-    const factor = purchaseUnitFactor.trim() === ""
-      ? null
-      : Number(purchaseUnitFactor);
-    if (hasPurchaseUnit && (!factor || factor <= 1)) {
+    if (hasPurchaseUnit && factor <= 1) {
       return setError("Bulk conversion must be a whole number above 1");
     }
-    if (!hasPurchaseUnit && factor !== null) {
+    if (!hasPurchaseUnit && purchaseUnitFactor.trim() !== "") {
       return setError("Select a bulk unit or clear the factor");
     }
 
@@ -112,18 +208,17 @@ export function FullProductPage() {
         variantName: variantName.trim(),
         baseUnitId: Number(baseUnitId),
         purchaseUnitId: hasPurchaseUnit ? Number(purchaseUnitId) : null,
-        purchaseUnitFactor:
-          hasPurchaseUnit && factor ? Math.round(factor) : null,
+        purchaseUnitFactor: hasPurchaseUnit ? factor : null,
         lowStockThreshold:
           threshold.trim() === ""
             ? null
-            : quantityToMilli(Number(threshold)),
-        openingQuantity: quantityToMilli(qty),
-        openingCost: rupeesToPaisa(cost),
+            : quantityToMilli(thresholdInBase),
+        openingQuantity: quantityToMilli(qtyInBase),
+        openingCost: rupeesToPaisa(costInBase),
         suggestedRetailPrice:
-          retail.trim() === "" ? null : rupeesToPaisa(Number(retail)),
+          retail.trim() === "" ? null : rupeesToPaisa(retailInBase),
         suggestedWholesalePrice:
-          wholesale.trim() === "" ? null : rupeesToPaisa(Number(wholesale)),
+          wholesale.trim() === "" ? null : rupeesToPaisa(wholesaleInBase),
       });
       toast.success(`"${created.name}" created with opening stock`);
       navigate("/products");
@@ -159,7 +254,7 @@ export function FullProductPage() {
         }
       >
         <div className="max-w-3xl space-y-6">
-          {/* ── Product Section ── */}
+          {/* ─── PRODUCT ─── */}
           <section className="rounded-xl border bg-[rgb(var(--card))] p-5">
             <div className="flex items-center gap-2 mb-4">
               <Package className="w-4 h-4 text-[rgb(var(--muted-fg))]" />
@@ -245,7 +340,7 @@ export function FullProductPage() {
             </div>
           </section>
 
-          {/* ── Variant Section ── */}
+          {/* ─── VARIANT ─── */}
           <section className="rounded-xl border bg-[rgb(var(--card))] p-5">
             <div className="flex items-center gap-2 mb-4">
               <Layers className="w-4 h-4 text-[rgb(var(--muted-fg))]" />
@@ -295,9 +390,6 @@ export function FullProductPage() {
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-[rgb(var(--muted-fg))]">
-                    Stock will be tracked in this unit
-                  </p>
                 </div>
               </div>
 
@@ -343,106 +435,207 @@ export function FullProductPage() {
                     />
                   </div>
                 </div>
-                {previewConversion && (
+                {hasBulk && (
                   <div className="rounded-md bg-blue-500/10 border border-blue-500/30 px-3 py-2 text-sm text-blue-700 dark:text-blue-400 font-medium">
-                    {previewConversion}
+                    1 {bulkUnitShort} = {factor} {baseUnitShort}
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="fp-threshold">Low Stock Threshold</Label>
-                <Input
-                  id="fp-threshold"
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder="e.g. 10"
-                  value={threshold}
-                  onChange={(e) => setThreshold(e.target.value)}
-                />
-                <p className="text-xs text-[rgb(var(--muted-fg))]">
-                  Alert when stock drops to this level (in base units)
-                </p>
               </div>
             </div>
           </section>
 
-          {/* ── Opening Stock Section ── */}
+          {/* ─── OPENING STOCK ─── */}
           <section className="rounded-xl border bg-[rgb(var(--card))] p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Boxes className="w-4 h-4 text-[rgb(var(--muted-fg))]" />
-              <h2 className="text-base font-semibold">Opening Stock</h2>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Boxes className="w-4 h-4 text-[rgb(var(--muted-fg))]" />
+                <h2 className="text-base font-semibold">Opening Stock</h2>
+              </div>
+
+              {hasBulk && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setAllUnits("base")}
+                    className="text-xs px-2 py-1 rounded-md border hover:bg-[rgb(var(--muted))]"
+                  >
+                    All {baseUnitShort}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllUnits("bulk")}
+                    className="text-xs px-2 py-1 rounded-md border hover:bg-[rgb(var(--muted))]"
+                  >
+                    All {bulkUnitShort}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="fp-qty">Quantity (base units) *</Label>
+              {/* Quantity */}
+              <div className="space-y-1.5">
+                <Label htmlFor="fp-qty">Opening Quantity *</Label>
+                <div className="flex gap-2">
                   <Input
                     id="fp-qty"
                     type="number"
                     min="0"
                     step="any"
-                    placeholder="e.g. 48"
-                    value={openingQuantity}
+                    placeholder="e.g. 8"
+                    value={quantity}
                     onChange={(e) => {
-                      setOpeningQuantity(e.target.value);
+                      setQuantity(e.target.value);
                       if (error) setError(null);
                     }}
+                    className="flex-1"
+                  />
+                  <UnitDropdown
+                    value={quantityUnit}
+                    hasBulk={hasBulk}
+                    baseShort={baseUnitShort}
+                    bulkShort={bulkUnitShort}
+                    onChange={setQuantityUnit}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="fp-cost">Cost per base unit (Rs.) *</Label>
+                {qtyPreview() && (
+                  <p className="text-xs text-[rgb(var(--muted-fg))]">
+                    {qtyPreview()}
+                  </p>
+                )}
+              </div>
+
+              {/* Cost */}
+              <div className="space-y-1.5">
+                <Label htmlFor="fp-cost">Cost per Unit (Rs.) *</Label>
+                <div className="flex gap-2">
                   <Input
                     id="fp-cost"
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="e.g. 80"
-                    value={openingCost}
+                    placeholder="e.g. 480"
+                    value={cost}
                     onChange={(e) => {
-                      setOpeningCost(e.target.value);
+                      setCost(e.target.value);
                       if (error) setError(null);
                     }}
+                    className="flex-1"
+                  />
+                  <UnitDropdown
+                    value={costUnit}
+                    hasBulk={hasBulk}
+                    baseShort={baseUnitShort}
+                    bulkShort={bulkUnitShort}
+                    onChange={setCostUnit}
                   />
                 </div>
+                {costPreview() && (
+                  <p className="text-xs text-[rgb(var(--muted-fg))]">
+                    {costPreview()}
+                  </p>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="fp-retail">Suggested Retail (Rs.)</Label>
+              {/* Retail */}
+              <div className="space-y-1.5">
+                <Label htmlFor="fp-retail">
+                  Suggested Retail (Rs.) <span className="text-[rgb(var(--muted-fg))] font-normal">(optional)</span>
+                </Label>
+                <div className="flex gap-2">
                   <Input
                     id="fp-retail"
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="Optional"
+                    placeholder="e.g. 720"
                     value={retail}
                     onChange={(e) => setRetail(e.target.value)}
+                    className="flex-1"
+                  />
+                  <UnitDropdown
+                    value={retailUnit}
+                    hasBulk={hasBulk}
+                    baseShort={baseUnitShort}
+                    bulkShort={bulkUnitShort}
+                    onChange={setRetailUnit}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="fp-wholesale">Suggested Wholesale (Rs.)</Label>
+                {retailPreview() && (
+                  <p className="text-xs text-[rgb(var(--muted-fg))]">
+                    {retailPreview()}
+                  </p>
+                )}
+              </div>
+
+              {/* Wholesale */}
+              <div className="space-y-1.5">
+                <Label htmlFor="fp-wholesale">
+                  Suggested Wholesale (Rs.) <span className="text-[rgb(var(--muted-fg))] font-normal">(optional)</span>
+                </Label>
+                <div className="flex gap-2">
                   <Input
                     id="fp-wholesale"
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="Optional"
+                    placeholder="e.g. 660"
                     value={wholesale}
                     onChange={(e) => setWholesale(e.target.value)}
+                    className="flex-1"
+                  />
+                  <UnitDropdown
+                    value={wholesaleUnit}
+                    hasBulk={hasBulk}
+                    baseShort={baseUnitShort}
+                    bulkShort={bulkUnitShort}
+                    onChange={setWholesaleUnit}
                   />
                 </div>
+                {wholesalePreview() && (
+                  <p className="text-xs text-[rgb(var(--muted-fg))]">
+                    {wholesalePreview()}
+                  </p>
+                )}
               </div>
 
-              {previewStock > 0 && (
+              {/* Low stock */}
+              <div className="space-y-1.5">
+                <Label htmlFor="fp-threshold">Low Stock Alert</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="fp-threshold"
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 2"
+                    value={threshold}
+                    onChange={(e) => setThreshold(e.target.value)}
+                    className="flex-1"
+                  />
+                  <UnitDropdown
+                    value={thresholdUnit}
+                    hasBulk={hasBulk}
+                    baseShort={baseUnitShort}
+                    bulkShort={bulkUnitShort}
+                    onChange={setThresholdUnit}
+                  />
+                </div>
+                {thresholdPreview() && (
+                  <p className="text-xs text-[rgb(var(--muted-fg))]">
+                    {thresholdPreview()}
+                  </p>
+                )}
+              </div>
+
+              {/* Opening stock value */}
+              {openingStockValue > 0 && (
                 <div className="rounded-lg bg-[rgb(var(--muted))] px-4 py-3 flex items-center justify-between text-sm">
                   <span className="text-[rgb(var(--muted-fg))]">
                     Total opening stock value
                   </span>
                   <span className="font-semibold">
-                    {formatMoney(previewStock)}
+                    {formatMoney(openingStockValue)}
                   </span>
                 </div>
               )}
@@ -457,7 +650,7 @@ export function FullProductPage() {
         </div>
       </Page>
 
-      {/* Inline: New Category */}
+      {/* ── Inline quick-create modals ── */}
       <QuickCreateModal
         open={newCategoryOpen}
         onClose={() => setNewCategoryOpen(false)}
@@ -470,7 +663,6 @@ export function FullProductPage() {
         }}
       />
 
-      {/* Inline: New Company */}
       <QuickCreateModal
         open={newCompanyOpen}
         onClose={() => setNewCompanyOpen(false)}
@@ -483,7 +675,6 @@ export function FullProductPage() {
         }}
       />
 
-      {/* Inline: New Unit */}
       <QuickCreateModal
         open={newUnitOpen}
         onClose={() => setNewUnitOpen(false)}
@@ -501,6 +692,43 @@ export function FullProductPage() {
         }}
       />
     </>
+  );
+}
+
+/* ────────────────────────────────────────────
+   Unit Dropdown
+   ──────────────────────────────────────────── */
+
+function UnitDropdown({
+  value,
+  hasBulk,
+  baseShort,
+  bulkShort,
+  onChange,
+}: {
+  value: FieldUnit;
+  hasBulk: boolean;
+  baseShort: string;
+  bulkShort: string;
+  onChange: (u: FieldUnit) => void;
+}) {
+  if (!hasBulk) {
+    return (
+      <div className="h-10 px-3 rounded-lg border bg-[rgb(var(--muted))] text-sm flex items-center min-w-[80px] justify-center text-[rgb(var(--muted-fg))]">
+        {baseShort}
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as FieldUnit)}
+      className="h-10 px-3 rounded-lg border bg-[rgb(var(--bg))] text-sm min-w-[90px]"
+    >
+      <option value="base">{baseShort}</option>
+      <option value="bulk">{bulkShort}</option>
+    </select>
   );
 }
 
@@ -529,11 +757,6 @@ function QuickCreateModal({
   const [secondField, setSecondField] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Reset on open
-  if (open && name === "" && secondField === "" && error === null) {
-    // First render with open=true — fine
-  }
 
   async function handleSave() {
     if (!name.trim()) return setError("Name is required");
